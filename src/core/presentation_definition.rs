@@ -6,8 +6,7 @@ use std::collections::HashMap;
 
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Map;
-use ssi::claims::jwt::VerifiablePresentation;
+use serde_json::{Map, Value};
 
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
 ///
@@ -210,7 +209,7 @@ impl PresentationDefinition {
     /// Internally, this method will call [PresentationDefinition::validate_submission_requirements].
     pub fn validate_presentation(
         &self,
-        verifiable_presentation: VerifiablePresentation,
+        verifiable_presentation: &Value,
         descriptor_map: &[DescriptorMap],
     ) -> Result<()> {
         // Validate the submission requirements. This will

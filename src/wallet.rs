@@ -1,9 +1,11 @@
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
-use http::header::CONTENT_TYPE;
+use oauth2::{HttpRequest, HttpResponse};
+use std::future::Future;
 use tracing::warn;
 use url::Url;
 
+use crate::core::util::http::{create_post_request, MIME_TYPE_FORM_URLENCODED};
 use crate::core::{
     authorization_request::{
         parameters::ResponseMode, verification::RequestVerifier, AuthorizationRequest,
@@ -11,76 +13,74 @@ use crate::core::{
     },
     metadata::WalletMetadata,
     response::{AuthorizationResponse, PostRedirection},
-    util::{base_request, AsyncHttpClient},
 };
 
 #[async_trait]
 pub trait Wallet: RequestVerifier + Sync {
-    type HttpClient: AsyncHttpClient + Send + Sync;
-
     fn metadata(&self) -> &WalletMetadata;
-    fn http_client(&self) -> &Self::HttpClient;
-
-    async fn validate_request(&self, url: Url) -> Result<AuthorizationRequestObject> {
+    async fn validate_request<HC, RE, F>(
+        &self,
+        url: &Url,
+        http_client_fn: HC,
+    ) -> Result<AuthorizationRequestObject>
+    where
+        HC: Fn(HttpRequest) -> F + Send,
+        F: Future<Output = Result<HttpResponse, RE>> + Send,
+        RE: std::error::Error + 'static + Send + Sync,
+    {
         let ar = AuthorizationRequest::from_url(url, &self.metadata().authorization_endpoint().0)
             .context("unable to parse authorization request")?;
-        ar.validate(self)
+        ar.validate(self, http_client_fn)
             .await
             .context("unable to validate authorization request")
     }
 
-    async fn submit_response(
+    async fn submit_response<HC, RE, F>(
         &self,
-        request: AuthorizationRequestObject,
+        response_uri: &Url,
+        response_mode: &ResponseMode,
         response: AuthorizationResponse,
-    ) -> Result<Option<Url>> {
-        let mut http_request_builder = base_request().uri(request.return_uri().as_str());
-
-        let http_request_body = match request.response_mode() {
+        http_client_fn: HC,
+    ) -> Result<Option<Url>>
+    where
+        HC: FnOnce(HttpRequest) -> F + Send,
+        F: Future<Output = Result<HttpResponse, RE>> + Send,
+        RE: std::error::Error + 'static + Send + Sync,
+    {
+        let http_request = match response_mode {
             ResponseMode::DirectPost => {
-                http_request_builder = http_request_builder
-                    .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
-                    .method("POST");
-
-                let AuthorizationResponse::Unencoded(unencoded) = response else {
+                let AuthorizationResponse::Unencoded(un_encoded) = response else {
                     bail!("unexpected AuthorizationResponse format")
                 };
+                let body = un_encoded.into_x_www_form_urlencoded()?.into_bytes();
 
-                unencoded.into_x_www_form_urlencoded()?.into_bytes()
+                create_post_request(response_uri, &body, MIME_TYPE_FORM_URLENCODED)
             }
             ResponseMode::DirectPostJwt => {
-                http_request_builder = http_request_builder
-                    .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
-                    .method("POST");
-
                 let AuthorizationResponse::Jwt(jwt) = response else {
                     bail!("unexpected AuthorizationResponse format")
                 };
+                let body = jwt.into_x_www_form_urlencoded()?.into_bytes();
 
-                jwt.into_x_www_form_urlencoded()?.into_bytes()
+                create_post_request(response_uri, &body, MIME_TYPE_FORM_URLENCODED)
             }
             ResponseMode::Unsupported(rm) => bail!("unsupported response_mode {rm}"),
         };
 
-        let http_request = http_request_builder
-            .body(http_request_body)
-            .context("failed to construct presentation submission request")?;
-        let http_response = self
-            .http_client()
-            .execute(http_request)
+        let http_response = http_client_fn(http_request)
             .await
             .context("failed to make authorization response request")?;
 
-        let status = http_response.status();
-        let Ok(body) = String::from_utf8(http_response.into_body()) else {
-            bail!("failed to parse authorization response response as UTF-8 (status: {status})")
-        };
-
+        let status = http_response.status_code;
         if !status.is_success() {
-            bail!("authorization response request was unsuccessful (status: {status}): {body}")
+            bail!(
+                "error submitting authorization response: status_code={}, response_body={}",
+                status,
+                String::from_utf8(http_response.body).unwrap_or("".to_owned())
+            )
         }
 
-        Ok(serde_json::from_str(&body)
+        Ok(serde_json::from_slice(&http_response.body)
             .map_err(|e| warn!("response did not contain a redirect: {e}"))
             .ok()
             .map(|PostRedirection { redirect_uri }| redirect_uri))

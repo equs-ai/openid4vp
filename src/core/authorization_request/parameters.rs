@@ -1,16 +1,17 @@
-use std::{fmt, ops::Deref};
-
+use super::AuthorizationRequestObject;
+use crate::core::util::http::{create_get_request, MIME_TYPE_JSON};
 use crate::core::{
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
     presentation_definition::PresentationDefinition as PresentationDefinitionParsed,
-    util::{base_request, AsyncHttpClient},
 };
 use anyhow::{bail, Context, Error, Ok};
+use oauth2::{HttpRequest, HttpResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
+use std::fmt;
+use std::future::Future;
+use std::ops::Deref;
 use url::Url;
-
-use super::AuthorizationRequestObject;
 
 const DID: &str = "did";
 const ENTITY_ID: &str = "entity_id";
@@ -131,39 +132,33 @@ impl ClientMetadata {
     ///
     /// If the client metadata is not passed by reference or value if the Authorization Request Object,
     /// then this function will return an error.
-    pub async fn resolve<H: AsyncHttpClient>(
+    pub async fn resolve<HC, RE, F>(
         request: &AuthorizationRequestObject,
-        http_client: &H,
-    ) -> Result<Self, Error> {
+        http_client_fn: HC,
+    ) -> Result<Self, Error>
+    where
+        HC: FnOnce(HttpRequest) -> F,
+        F: Future<Output = Result<HttpResponse, RE>>,
+        RE: std::error::Error + 'static + Sync + Send,
+    {
         if let Some(metadata) = request.get() {
             return metadata;
         }
 
         if let Some(metadata_uri) = request.get::<ClientMetadataUri>() {
-            let uri = metadata_uri.parsing_error()?.0;
-            let request = base_request()
-                .method("GET")
-                .uri(uri.to_string())
-                .body(vec![])
-                .context("failed to build client metadata request")?;
+            let uri = metadata_uri.parsing_error()?;
 
-            let response = http_client
-                .execute(request)
-                .await
-                .context(format!("failed to make client metadata request at {uri}"))?;
+            let resp = http_client_fn(create_get_request(&uri.0, MIME_TYPE_JSON)).await?;
 
-            let status = response.status();
-
-            if !status.is_success() {
-                bail!("client metadata request was unsuccessful (status: {status})")
+            if !resp.status_code.is_success() {
+                bail!(format!(
+                    "failed to get client metadata: status_code={}, response_body={}",
+                    resp.status_code,
+                    String::from_utf8(resp.body).unwrap_or("".to_owned())
+                ));
             }
 
-            return serde_json::from_slice::<Json>(response.body())
-                .context(format!(
-                "failed to parse client metadata response as JSON from {uri} (status: {status})"
-            ))?
-                .try_into()
-                .context("failed to parse client metadata from JSON");
+            serde_json::from_slice(&resp.body).context("could not parse ClientMetadata")?
         }
 
         tracing::warn!("the client metadata was not passed by reference or value");
@@ -199,6 +194,12 @@ pub struct Nonce(String);
 impl From<String> for Nonce {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+
+impl From<Nonce> for String {
+    fn from(value: Nonce) -> Self {
+        value.0
     }
 }
 
@@ -295,6 +296,12 @@ impl TryFrom<Json> for RedirectUri {
 /// `response_uri` field in the Authorization Request.
 #[derive(Debug, Clone)]
 pub struct ResponseUri(pub Url);
+
+impl ResponseUri {
+    pub fn new(url: Url) -> Self {
+        Self(url)
+    }
+}
 
 impl TypedParameter for ResponseUri {
     const KEY: &'static str = "response_uri";
@@ -465,6 +472,7 @@ impl From<State> for Json {
     }
 }
 
+// TODO: Revisit the inner parsed type.
 #[derive(Debug, Clone)]
 pub struct PresentationDefinition {
     raw: Json,

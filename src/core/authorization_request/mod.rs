@@ -1,6 +1,8 @@
+use std::future::Future;
 use std::ops::{Deref, DerefMut};
 
 use anyhow::{anyhow, bail, Context, Error, Result};
+use oauth2::{HttpRequest, HttpResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use url::Url;
@@ -14,11 +16,10 @@ use self::{
     },
     verification::verify_request,
 };
+use crate::core::authorization_request::parameters::ClientMetadata;
+use crate::core::util::http::{create_get_request, MIME_TYPE_JSON, MIME_TYPE_TEXT_PLAIN};
 
-use super::{
-    object::{ParsingErrorContext, UntypedObject},
-    util::{base_request, AsyncHttpClient},
-};
+use super::object::{ParsingErrorContext, UntypedObject};
 
 pub mod parameters;
 pub mod verification;
@@ -34,6 +35,7 @@ pub struct AuthorizationRequestObject(
     PresentationDefinitionIndirection,
     Url,
     Nonce,
+    ClientMetadata,
 );
 
 /// An Authorization Request.
@@ -65,42 +67,34 @@ impl AuthorizationRequest {
     /// [RequestObject].
     ///
     /// Custom wallet metadata can be provided, otherwise the default metadata for this profile is used.
-    pub async fn validate<W: Wallet + ?Sized>(
+    pub async fn validate<W, HC, F, RE>(
         self,
         wallet: &W,
-    ) -> Result<AuthorizationRequestObject> {
+        http_client_fn: HC,
+    ) -> Result<AuthorizationRequestObject>
+    where
+        W: Wallet + ?Sized,
+        HC: Fn(HttpRequest) -> F + Send,
+        F: Future<Output = Result<HttpResponse, RE>> + Send,
+        RE: std::error::Error + 'static + Send + Sync,
+    {
         let jwt = match self.request_indirection {
             RequestIndirection::ByValue(jwt) => jwt,
             RequestIndirection::ByReference(url) => {
-                let request = base_request()
-                    .method("GET")
-                    .uri(url.to_string())
-                    .body(vec![])
-                    .context("failed to build authorization request request")?;
+                let resp = http_client_fn(create_get_request(&url, MIME_TYPE_TEXT_PLAIN)).await?;
 
-                let response = wallet
-                    .http_client()
-                    .execute(request)
-                    .await
-                    .context(format!(
-                        "failed to make authorization request request at {url}"
-                    ))?;
-
-                let status = response.status();
-                let Ok(body) = String::from_utf8(response.into_body()) else {
-                    bail!("failed to parse authorization request response as UTF-8 from {url} (status: {status})")
-                };
-
-                if !status.is_success() {
+                if !resp.status_code.is_success() {
                     bail!(
-                        "authorization request request was unsuccessful (status: {status}): {body}"
-                    )
+                        format!("failed to get authorization request object: status_code={}, response_body={}",
+                            resp.status_code, String::from_utf8(resp.body).unwrap_or("".to_owned())
+                        )
+                    );
                 }
 
-                body
+                String::from_utf8(resp.body).context("cannot parse authorization request object")?
             }
         };
-        let aro = verify_request(wallet, jwt)
+        let aro = verify_request(wallet, jwt, http_client_fn)
             .await
             .context("unable to validate Authorization Request")?;
         if self.client_id.as_str() != aro.client_id().0.as_str() {
@@ -143,7 +137,7 @@ impl AuthorizationRequest {
     /// let authorization_endpoint: Url = "example://".parse().unwrap();
     ///
     /// let authorization_request = AuthorizationRequest::from_url(
-    ///     url,
+    ///     &url,
     ///     &authorization_endpoint
     /// ).unwrap();
     ///
@@ -157,7 +151,7 @@ impl AuthorizationRequest {
     ///
     /// assert_eq!(request_object, "test");
     /// ```
-    pub fn from_url(url: Url, authorization_endpoint: &Url) -> Result<Self> {
+    pub fn from_url(url: &Url, authorization_endpoint: &Url) -> Result<Self> {
         let query = url
             .query()
             .ok_or(anyhow!("missing query params in Authorization Request uri"))?
@@ -204,35 +198,31 @@ impl AuthorizationRequestObject {
         &self.2
     }
 
-    pub async fn resolve_presentation_definition<H: AsyncHttpClient>(
+    pub async fn resolve_presentation_definition<HC, F, RE>(
         &self,
-        http_client: &H,
-    ) -> Result<PresentationDefinition> {
+        http_client_fn: HC,
+    ) -> Result<PresentationDefinition>
+    where
+        HC: FnOnce(HttpRequest) -> F,
+        F: Future<Output = std::result::Result<HttpResponse, RE>>,
+        RE: std::error::Error + 'static + Sync + Send,
+    {
         match &self.5 {
             PresentationDefinitionIndirection::ByValue(by_value) => Ok(by_value.clone()),
             PresentationDefinitionIndirection::ByReference(by_reference) => {
-                let request = base_request()
-                    .method("GET")
-                    .uri(by_reference.to_string())
-                    .body(vec![])
-                    .context("failed to build presentation definition request")?;
+                let resp =
+                    http_client_fn(create_get_request(&by_reference, MIME_TYPE_JSON)).await?;
 
-                let response = http_client.execute(request).await.context(format!(
-                    "failed to make presentation definition request at {by_reference}"
-                ))?;
-
-                let status = response.status();
-
-                if !status.is_success() {
-                    bail!("presentation definition request was unsuccessful (status: {status})")
+                if !resp.status_code.is_success() {
+                    bail!(format!(
+                        "failed to get Presentation Definition: status_code={}, response_body={}",
+                        resp.status_code,
+                        String::from_utf8(resp.body).unwrap_or("".to_owned())
+                    ));
                 }
 
-                serde_json::from_slice::<Json>(response.body())
-                    .context(format!(
-                    "failed to parse presentation definition response as JSON from {by_reference} (status: {status})"
-                ))?
-                .try_into()
-                .context("failed to parse presentation definition from JSON")
+                let presentation_def = serde_json::from_slice::<Json>(&resp.body)?;
+                PresentationDefinition::try_from(presentation_def)
             }
         }
     }
@@ -262,6 +252,10 @@ impl AuthorizationRequestObject {
 
     pub fn nonce(&self) -> &Nonce {
         &self.7
+    }
+
+    pub fn client_metadata(&self) -> &ClientMetadata {
+        &self.8
     }
 }
 
@@ -329,6 +323,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
         };
 
         let nonce = value.get().parsing_error()?;
+        let client_metadata = value.get().parsing_error()?;
 
         Ok(Self(
             value,
@@ -339,6 +334,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             pd_indirection,
             return_uri,
             nonce,
+            client_metadata,
         ))
     }
 }

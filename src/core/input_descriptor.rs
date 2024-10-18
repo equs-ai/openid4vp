@@ -1,11 +1,13 @@
-use super::{credential_format::*, presentation_submission::*};
+use super::presentation_submission::*;
 use crate::utils::NonEmptyVec;
 
 use anyhow::{bail, Context, Result};
 use jsonschema::{JSONSchema, ValidationError};
 use serde::{Deserialize, Serialize};
-use ssi::claims::jwt::VerifiablePresentation;
-use ssi::dids::ssi_json_ld::syntax::from_value;
+use serde_json::Value;
+
+pub use super::credential_format::ClaimFormat;
+pub use super::credential_format::ClaimFormatMap;
 
 /// A GroupId represents a unique identifier for a group of Input Descriptors.
 ///
@@ -156,18 +158,13 @@ impl InputDescriptor {
     /// Validate the input descriptor against the verifiable presentation and the descriptor map.
     pub fn validate_verifiable_presentation(
         &self,
-        verifiable_presentation: &VerifiablePresentation,
+        verifiable_presentation: &Value,
         descriptor_map: &DescriptorMap,
     ) -> Result<()> {
         // The descriptor map must match the input descriptor.
         if descriptor_map.id() != self.id() {
             bail!("Input Descriptor ID does not match the Descriptor Map ID.")
         }
-
-        let vp = &verifiable_presentation.0;
-
-        let vp_json: serde_json::Value =
-            from_value(vp.clone()).context("failed to parse value into json type")?;
 
         if let Some(ConstraintsLimitDisclosure::Required) = self.constraints.limit_disclosure {
             if self.constraints.fields().is_empty() {
@@ -184,7 +181,7 @@ impl InputDescriptor {
                 }
             }
 
-            let mut selector = jsonpath_lib::selector(&vp_json);
+            let mut selector = jsonpath_lib::selector(&verifiable_presentation);
 
             // The root element is relative to the descriptor map path returned.
             let Ok(root_element) = selector(descriptor_map.path()) else {

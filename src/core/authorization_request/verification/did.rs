@@ -6,8 +6,7 @@ use crate::core::{
 use anyhow::{bail, Context, Result};
 use base64::prelude::*;
 use serde_json::{Map, Value as Json};
-
-use ssi::jwk::JWKResolver;
+use ssi::did_resolve::{resolve_key, DIDResolver};
 
 /// Default implementation of request validation for `client_id_scheme` `did`.
 pub async fn verify_with_resolver(
@@ -15,9 +14,9 @@ pub async fn verify_with_resolver(
     request_object: &AuthorizationRequestObject,
     request_jwt: String,
     trusted_dids: Option<&[String]>,
-    resolver: impl JWKResolver,
+    resolver: &dyn DIDResolver,
 ) -> Result<()> {
-    let (headers_b64, _, _) = ssi::claims::jws::split_jws(&request_jwt)?;
+    let (headers_b64, _, _) = ssi::jws::split_jws(&request_jwt)?;
 
     let headers_json_bytes = BASE64_URL_SAFE_NO_PAD
         .decode(headers_b64)
@@ -65,12 +64,11 @@ pub async fn verify_with_resolver(
         }
     }
 
-    let jwk = resolver
-        .fetch_public_jwk(Some(&kid))
+    let jwk = resolve_key(&kid, resolver)
         .await
-        .context("unable to resolve key from verification method")?;
+        .context("unable to resolve verification method from 'kid' header")?;
 
-    let _: Json = ssi::claims::jwt::decode_verify(&request_jwt, &jwk)
+    let _: Json = ssi::jwt::decode_verify(&request_jwt, &jwk)
         .context("request signature could not be verified")?;
 
     Ok(())
