@@ -5,7 +5,6 @@ use std::ops::{Deref, DerefMut};
 use anyhow::{Error, Result};
 use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
 use serde::{Deserialize, Serialize};
-use ssi::jwk::Algorithm;
 
 use self::parameters::wallet::{AuthorizationEndpoint, VpFormatsSupported};
 
@@ -73,7 +72,7 @@ impl WalletMetadata {
 
         let response_types_supported = ResponseTypesSupported(vec![ResponseType::VpToken]);
 
-        let alg_values_supported = vec![Algorithm::ES256.to_string()];
+        let alg_values_supported = vec!["ES256".to_string()];
 
         let mut vp_formats_supported = ClaimFormatMap::new();
         vp_formats_supported.insert(

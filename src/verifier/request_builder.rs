@@ -1,36 +1,34 @@
 use anyhow::{bail, Context, Result};
 use url::Url;
-use uuid::Uuid;
 
-use crate::{
-    core::{
-        authorization_request::{
-            self,
-            parameters::{ResponseMode, ResponseType, ResponseUri},
-            AuthorizationRequest, AuthorizationRequestObject, RequestIndirection,
-        },
-        metadata::{
-            parameters::wallet::{AuthorizationEndpoint, ClientIdSchemesSupported},
-            WalletMetadata,
-        },
-        object::{ParsingErrorContext, TypedParameter, UntypedObject},
-        presentation_definition::PresentationDefinition,
+use super::Verifier;
+use crate::core::authorization_request::parameters::ResponseUri;
+use crate::core::{
+    authorization_request::{
+        self,
+        parameters::{ResponseMode, ResponseType},
+        AuthorizationRequest, AuthorizationRequestObject, RequestIndirection,
     },
-    verifier::{by_reference::ByReference, session::Status},
+    metadata::{
+        parameters::wallet::{AuthorizationEndpoint, ClientIdSchemesSupported},
+        WalletMetadata,
+    },
+    object::{ParsingErrorContext, TypedParameter, UntypedObject},
+    presentation_definition::PresentationDefinition,
 };
-
-use super::{session::Session, Verifier};
+use crate::verifier::by_reference::ByReference;
+use crate::verifier::client::Client;
 
 #[derive(Debug, Clone)]
 #[must_use]
-pub struct RequestBuilder<'a> {
+pub struct RequestBuilder<'a, C: Client + Send + Sync> {
     presentation_definition: Option<PresentationDefinition>,
     request_parameters: UntypedObject,
-    verifier: &'a Verifier,
+    verifier: &'a Verifier<C>,
 }
 
-impl<'a> RequestBuilder<'a> {
-    pub(crate) fn new(verifier: &'a Verifier) -> Self {
+impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
+    pub(crate) fn new(verifier: &'a Verifier<C>) -> Self {
         Self {
             presentation_definition: None,
             request_parameters: verifier.default_request_params.clone(),
@@ -56,11 +54,13 @@ impl<'a> RequestBuilder<'a> {
     /// Build the request.
     ///
     /// ## Returns
-    /// - UUID that can be used by the application frontend to poll for the status of this request.
     /// - URL that the application frontend should use to drive the user to their wallet application.
-    pub async fn build(mut self, wallet_metadata: WalletMetadata) -> Result<(Uuid, Url)> {
-        let uuid = Uuid::new_v4();
-
+    /// - Authorization Request JWT that must be bind to `request_uri` endpoint if `pass_by_reference` is true.
+    pub async fn build(
+        mut self,
+        wallet_metadata: &WalletMetadata,
+        pass_by_reference: ByReference,
+    ) -> Result<(Url, String)> {
         let client_id = self.verifier.client.id();
         let client_id_scheme = self.verifier.client.scheme();
 
@@ -90,17 +90,11 @@ impl<'a> RequestBuilder<'a> {
             .context("response mode is required, see `with_request_parameter`")?
             .context("error occurred when retrieving response mode")?
         {
-            ResponseMode::DirectPost | ResponseMode::DirectPostJwt => {
-                let mut uri = self.verifier.submission_endpoint.clone();
-                {
-                    let Ok(mut path) = uri.path_segments_mut() else {
-                        bail!("invalid base URL for the submission endpoint")
-                    };
-                    path.push(&uuid.to_string());
-                }
-                self.request_parameters.insert(ResponseUri(uri));
-            }
             ResponseMode::Unsupported(r) => bail!("unsupported response_mode: {r}"),
+            ResponseMode::DirectPost | ResponseMode::DirectPostJwt => {
+                self.request_parameters
+                    .insert(ResponseUri(self.verifier.submission_endpoint.clone()));
+            }
         }
 
         if !wallet_metadata
@@ -122,20 +116,9 @@ impl<'a> RequestBuilder<'a> {
             .generate_request_object_jwt(&authorization_request_object)
             .await?;
 
-        let mut initial_status = Status::SentRequest;
-
-        let request_indirection = match self.verifier.pass_by_reference.clone() {
+        let request_indirection = match pass_by_reference {
             ByReference::False => RequestIndirection::ByValue(authorization_request_jwt.clone()),
-            ByReference::True { mut at } => {
-                {
-                    let Ok(mut path) = at.path_segments_mut() else {
-                        bail!("invalid base URL for Authorization Request by reference")
-                    };
-                    path.push(&uuid.to_string());
-                }
-                initial_status = Status::SentRequestByReference;
-                RequestIndirection::ByReference(at)
-            }
+            ByReference::True { at } => RequestIndirection::ByReference(at),
         };
 
         let authorization_endpoint = wallet_metadata
@@ -150,20 +133,6 @@ impl<'a> RequestBuilder<'a> {
         .to_url(authorization_endpoint)
         .context("unable to generate authorization request URL")?;
 
-        let session = Session {
-            uuid,
-            status: initial_status,
-            authorization_request_jwt,
-            authorization_request_object,
-            presentation_definition,
-        };
-
-        self.verifier
-            .session_store
-            .initiate(session)
-            .await
-            .context("failed to store the session in the session store")?;
-
-        Ok((uuid, authorization_request_url))
+        Ok((authorization_request_url, authorization_request_jwt))
     }
 }

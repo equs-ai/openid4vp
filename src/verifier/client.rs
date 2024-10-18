@@ -4,8 +4,7 @@ use anyhow::{bail, Context as _, Result};
 use async_trait::async_trait;
 use base64::prelude::*;
 use serde_json::{json, Value as Json};
-use ssi::jwk::JWKResolver;
-
+use ssi::did_resolve::DIDResolver;
 use tracing::debug;
 use x509_cert::{
     der::Encode,
@@ -34,28 +33,23 @@ pub trait Client: Debug {
 
 /// A [Client] with the `did` Client Identifier.
 #[derive(Debug, Clone)]
-pub struct DIDClient {
+pub struct DIDClient<S: RequestSigner> {
     id: ClientId,
     vm: String,
-    signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
+    signer: S,
 }
 
-impl DIDClient {
-    pub async fn new(
-        vm: String,
-        signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
-        resolver: impl JWKResolver,
-    ) -> Result<Self> {
+impl<S: RequestSigner> DIDClient<S> {
+    pub async fn new(vm: String, signer: S, resolver: &dyn DIDResolver) -> Result<Self> {
         let (id, _f) = vm.rsplit_once('#').context(format!(
             "expected a DID verification method, received '{vm}'"
         ))?;
 
-        let jwk = resolver
-            .fetch_public_jwk(Some(&vm))
+        let key = ssi::did_resolve::resolve_key(&vm, resolver)
             .await
             .context("unable to resolve key from verification method")?;
 
-        if *jwk != signer.jwk().context("signer did not have a JWK")? {
+        if !signer.jwk().map(|jwk| key == jwk).unwrap_or(true) {
             bail!(
                 "verification method resolved from DID document did not match public key of signer"
             )
@@ -132,7 +126,7 @@ pub enum X509SanVariant {
 }
 
 #[async_trait]
-impl Client for DIDClient {
+impl<S: RequestSigner + Sync> Client for DIDClient<S> {
     fn id(&self) -> &ClientId {
         &self.id
     }
@@ -154,7 +148,7 @@ impl Client for DIDClient {
             "kid": self.vm,
             "typ": "JWT"
         });
-        make_jwt(header, body, self.signer.as_ref()).await
+        make_jwt(header, body, &self.signer).await
     }
 }
 
@@ -203,7 +197,9 @@ async fn make_jwt<S: RequestSigner + ?Sized>(
         serde_json::to_vec(&header).map(|b| BASE64_URL_SAFE_NO_PAD.encode(b))?;
     let body_b64 = serde_json::to_vec(body).map(|b| BASE64_URL_SAFE_NO_PAD.encode(b))?;
     let payload = [header_b64.as_bytes(), b".", body_b64.as_bytes()].concat();
-    let signature = signer.sign(&payload).await;
+
+    let signature = signer.sign(&payload).await?;
     let signature_b64 = BASE64_URL_SAFE_NO_PAD.encode(signature);
+
     Ok(format!("{header_b64}.{body_b64}.{signature_b64}"))
 }

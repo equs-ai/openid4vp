@@ -1,23 +1,22 @@
-use crate::{
-    core::{
-        metadata::parameters::{
-            verifier::{AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc},
-            wallet::{
-                AuthorizationEncryptionAlgValuesSupported,
-                AuthorizationEncryptionEncValuesSupported, ClientIdSchemesSupported,
-            },
-        },
-        object::{ParsingErrorContext, TypedParameter, UntypedObject},
-    },
-    wallet::Wallet,
-};
-use anyhow::{bail, Context, Error, Result};
-use async_trait::async_trait;
-
 use super::{
     parameters::{ClientIdScheme, ClientMetadata, ResponseMode},
     AuthorizationRequestObject,
 };
+use crate::core::{
+    metadata::parameters::{
+        verifier::{AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc},
+        wallet::{
+            AuthorizationEncryptionAlgValuesSupported, AuthorizationEncryptionEncValuesSupported,
+            ClientIdSchemesSupported,
+        },
+    },
+    object::{ParsingErrorContext, TypedParameter, UntypedObject},
+};
+use crate::wallet::Wallet;
+use anyhow::{bail, Context, Error, Result};
+use async_trait::async_trait;
+use oauth2::{HttpRequest, HttpResponse};
+use std::future::Future;
 
 pub mod did;
 pub mod verifier;
@@ -28,6 +27,8 @@ pub mod x509_san;
 #[async_trait]
 pub trait RequestVerifier {
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `did`.
+    ///
+    /// See default implementation [did].
     async fn did(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -42,7 +43,7 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'entity' client verification not implemented")
+        bail!("'entity_id' client verification not implemented")
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `pre-registered`.
@@ -51,10 +52,12 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'pre-registered' client verification not implemented")
+        bail!("'preregistered' client verification not implemented")
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `redirect_uri`.
+    ///
+    /// See default implementation [redirect_uri].
     async fn redirect_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -68,11 +71,13 @@ pub trait RequestVerifier {
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
-    ) -> Result<(), Error> {
+    ) -> std::result::Result<(), Error> {
         bail!("'verifier_attestation' client verification not implemented")
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_dns`.
+    ///
+    /// See default implementation [x509_san_uri].
     async fn x509_san_dns(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -82,6 +87,8 @@ pub trait RequestVerifier {
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_uri`.
+    ///
+    /// See default implementation [x509_san_uri].
     async fn x509_san_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -97,20 +104,26 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'{client_id_scheme}' client verification not implemented")
+        bail!("'other' client verification not implemented")
     }
 }
 
-pub(crate) async fn verify_request<W: Wallet + ?Sized>(
+pub(crate) async fn verify_request<W, HC, F, RE>(
     wallet: &W,
     jwt: String,
-) -> Result<AuthorizationRequestObject> {
-    let request: AuthorizationRequestObject =
-        ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
-            .context("unable to decode Authorization Request Object JWT")?
-            .try_into()?;
+    http_client_fn: HC,
+) -> Result<AuthorizationRequestObject>
+where
+    W: Wallet + ?Sized,
+    HC: Fn(HttpRequest) -> F + Send,
+    F: Future<Output = Result<HttpResponse, RE>> + Send,
+    RE: std::error::Error + 'static + Sync + Send,
+{
+    let request: AuthorizationRequestObject = ssi::jwt::decode_unverified::<UntypedObject>(&jwt)
+        .context("unable to decode Authorization Request Object JWT")?
+        .try_into()?;
 
-    validate_request_against_metadata(wallet, &request).await?;
+    validate_request_against_metadata(wallet, &request, http_client_fn).await?;
 
     let client_id_scheme = request.client_id_scheme();
 
@@ -128,10 +141,17 @@ pub(crate) async fn verify_request<W: Wallet + ?Sized>(
     Ok(request)
 }
 
-pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
+pub(crate) async fn validate_request_against_metadata<W, HC, F, RE>(
     wallet: &W,
     request: &AuthorizationRequestObject,
-) -> Result<(), Error> {
+    http_client_fn: HC,
+) -> Result<(), Error>
+where
+    W: Wallet + ?Sized,
+    HC: Fn(HttpRequest) -> F,
+    F: Future<Output = Result<HttpResponse, RE>>,
+    RE: std::error::Error + 'static + Sync + Send,
+{
     let wallet_metadata = wallet.metadata();
 
     let client_id_scheme = request.client_id_scheme();
@@ -146,9 +166,7 @@ pub(crate) async fn validate_request_against_metadata<W: Wallet + ?Sized>(
         )
     }
 
-    let client_metadata = ClientMetadata::resolve(request, wallet.http_client())
-        .await?
-        .0;
+    let client_metadata = ClientMetadata::resolve(request, http_client_fn).await?.0;
 
     let response_mode = request.get::<ResponseMode>().parsing_error()?;
 

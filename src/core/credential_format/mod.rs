@@ -34,6 +34,16 @@ pub enum ClaimFormat {
         /// The algorithm used to sign the JWT verifiable credential.
         alg: Vec<String>,
     },
+    #[serde(rename = "vc+sd-jwt")]
+    SdJwtVc {
+        /// The algorithm used to sign the SD-JWT verifiable credential.
+        #[serde(rename = "sd-jwt_alg_values")]
+        jwt_alg_values: Vec<String>,
+
+        /// The algorithm that cann be used to sign the Key Binding of SD-JWT verifiable credential.
+        #[serde(rename = "kb-jwt_alg_values")]
+        kb_alg_values: Vec<String>,
+    },
     #[serde(rename = "jwt_vp")]
     JwtVp {
         /// The algorithm used to sign the JWT verifiable presentation.
@@ -92,6 +102,7 @@ impl ClaimFormat {
         match self {
             ClaimFormat::Jwt { .. } => ClaimFormatDesignation::Jwt,
             ClaimFormat::JwtVc { .. } => ClaimFormatDesignation::JwtVc,
+            ClaimFormat::SdJwtVc { .. } => ClaimFormatDesignation::SdJwtVc,
             ClaimFormat::JwtVcJson { .. } => ClaimFormatDesignation::JwtVcJson,
             ClaimFormat::JwtVp { .. } => ClaimFormatDesignation::JwtVp,
             ClaimFormat::JwtVpJson { .. } => ClaimFormatDesignation::JwtVpJson,
@@ -111,6 +122,24 @@ impl ClaimFormat {
 
                 ClaimFormatDesignation::Other(format)
             }
+        }
+    }
+
+    pub fn name(&self) -> String {
+        match self {
+            ClaimFormat::Jwt { .. } => "jwt".to_string(),
+            ClaimFormat::JwtVc { .. } => "jwt_vc".to_string(),
+            ClaimFormat::SdJwtVc { .. } => "vc+sd-jwt".to_string(),
+            ClaimFormat::JwtVp { .. } => "jwt_vp".to_string(),
+            ClaimFormat::JwtVcJson { .. } => "jwt_vc_json".to_string(),
+            ClaimFormat::JwtVpJson { .. } => "jwt_vp_json".to_string(),
+            ClaimFormat::Ldp { .. } => "ldp".to_string(),
+            ClaimFormat::LdpVc { .. } => "ldp_vc".to_string(),
+            ClaimFormat::LdpVp { .. } => "ldp_vp".to_string(),
+            ClaimFormat::AcVc { .. } => "ac_vc".to_string(),
+            ClaimFormat::AcVp { .. } => "ac_vp".to_string(),
+            ClaimFormat::MsoMDoc(_) => "mso_mdoc".to_string(),
+            ClaimFormat::Other(v) => serde_json::to_string(v).unwrap_or("other".to_string()),
         }
     }
 }
@@ -172,6 +201,13 @@ pub enum ClaimFormatDesignation {
     /// [RFC7518](https://identity.foundation/claim-format-registry/#ref:RFC7518) Section 3.
     #[serde(rename = "jwt_vc")]
     JwtVc,
+    /// These formats are Selective Disclosure Json Web Tokens (SD-JWT) [draft-ietf-oauth-selective-disclosure-jwt-12](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-05)
+    /// SD-JWT is a selective disclosure mechanism for JWT and is similarly intended to be general-purpose specification.
+    /// The Disclosures are sent to the Holder as part of the SD-JWT in the format defined in Section 5. [SD-JWT and SD-JWT+KB Data Formats](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-selective-disclosure-jwt-12#name-sd-jwt-and-sd-jwtkb-data-fo)
+    /// Expression of supported algorithms in relation to these formats MUST be conveyed using an JWT alg
+    /// property paired with values that are identifiers from the JSON Web Algorithms registry
+    #[serde(rename = "vc+sd-jwt")]
+    SdJwtVc,
     /// See [JwtVc](JwtVc) for more information.
     #[serde(rename = "jwt_vp")]
     JwtVp,
@@ -225,6 +261,7 @@ impl From<&str> for ClaimFormatDesignation {
         match s {
             "jwt" => Self::Jwt,
             "jwt_vc" => Self::JwtVc,
+            "vc+sd-jwt" => Self::SdJwtVc,
             "jwt_vp" => Self::JwtVp,
             "jwt_vc_json" => Self::JwtVcJson,
             "jwt_vp_json" => Self::JwtVpJson,
@@ -245,6 +282,7 @@ impl From<ClaimFormatDesignation> for String {
             ClaimFormatDesignation::AcVc => "ac_vc".to_string(),
             ClaimFormatDesignation::AcVp => "ac_vp".to_string(),
             ClaimFormatDesignation::Jwt => "jwt".to_string(),
+            ClaimFormatDesignation::SdJwtVc => "vc+sd-jwt".to_string(),
             ClaimFormatDesignation::JwtVc => "jwt_vc".to_string(),
             ClaimFormatDesignation::JwtVp => "jwt_vp".to_string(),
             ClaimFormatDesignation::JwtVcJson => "jwt_vc_json".to_string(),
@@ -276,8 +314,8 @@ mod tests {
               "proof_type": ["Ed25519Signature2018", "EcdsaSecp256k1Signature2019"]
             },
             "sd_jwt_vc": {
-              "alg": ["ES256", "ES384"],
-              "kb_jwt_alg": ["ES256"]
+              "sd-jwt_alg_values": ["ES256", "ES384"],
+              "kb_jwt_alg_values": ["ES256"]
             },
             "com.example.custom_vc": {
               "version": "1.0",
