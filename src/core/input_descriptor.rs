@@ -244,6 +244,8 @@ impl InputDescriptor {
                     self.constraints.limit_disclosure
                 {
                     bail!("Field elements are empty while limit disclosure is required.")
+                } else if constraint_field.is_required() {
+                    bail!("Field elements are not found while it is required.")
                 }
             }
         }
