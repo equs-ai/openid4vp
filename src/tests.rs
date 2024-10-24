@@ -149,9 +149,9 @@ fn test_presentation_submission_validation() -> Result<()> {
             format!("tests/presentation-submission/submission_{test_case}.json",),
         )?)?;
 
-        let presentation: Value = serde_json::from_str(&fs::read_to_string(
-            format!("tests/presentation-submission/vp_{test_case}.json",),
-        )?)?;
+        let presentation: Value = serde_json::from_str(&fs::read_to_string(format!(
+            "tests/presentation-submission/vp_{test_case}.json",
+        ))?)?;
 
         match test_case {
             1 | 2 => {

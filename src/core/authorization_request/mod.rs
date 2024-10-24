@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::ops::{Deref, DerefMut};
 
-use anyhow::{anyhow, bail, Context, Error, Result};
+use anyhow::anyhow;
 use oauth2::{HttpRequest, HttpResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -16,10 +16,13 @@ use self::{
     },
     verification::verify_request,
 };
-use crate::core::authorization_request::parameters::ClientMetadata;
-use crate::core::util::http::{create_get_request, MIME_TYPE_JSON, MIME_TYPE_TEXT_PLAIN};
-
 use super::object::{ParsingErrorContext, UntypedObject};
+use crate::core::authorization_request::parameters::ClientMetadata;
+use crate::core::error::Error;
+use crate::core::error::ErrorType::{
+    InvalidPresentationDefinitionReference, InvalidPresentationDefinitionUri,
+};
+use crate::core::util::http::{create_get_request, MIME_TYPE_JSON, MIME_TYPE_TEXT_PLAIN};
 
 pub mod parameters;
 pub mod verification;
@@ -71,7 +74,7 @@ impl AuthorizationRequest {
         self,
         wallet: &W,
         http_client_fn: HC,
-    ) -> Result<AuthorizationRequestObject>
+    ) -> Result<AuthorizationRequestObject, Error>
     where
         W: Wallet + ?Sized,
         HC: Fn(HttpRequest) -> F + Send,
@@ -81,30 +84,69 @@ impl AuthorizationRequest {
         let jwt = match self.request_indirection {
             RequestIndirection::ByValue(jwt) => jwt,
             RequestIndirection::ByReference(url) => {
-                let resp = http_client_fn(create_get_request(&url, MIME_TYPE_TEXT_PLAIN)).await?;
+                let resp = http_client_fn(create_get_request(&url, MIME_TYPE_TEXT_PLAIN))
+                    .await
+                    .map_err(|e| Error::Internal(anyhow!(e)))?;
 
                 if !resp.status_code.is_success() {
-                    bail!(
-                        format!("failed to get authorization request object: status_code={}, response_body={}",
-                            resp.status_code, String::from_utf8(resp.body).unwrap_or("".to_owned())
-                        )
-                    );
+                    return Err(Error::protocol_invalid_req(
+                        "failed to get authorization request object",
+                    ));
                 }
 
-                String::from_utf8(resp.body).context("cannot parse authorization request object")?
+                String::from_utf8(resp.body).map_err(|e| {
+                    Error::protocol_invalid_req("cannot parse authorization request object")
+                        .add_source(e.into())
+                })?
             }
         };
-        let aro = verify_request(wallet, jwt, http_client_fn)
-            .await
-            .context("unable to validate Authorization Request")?;
+        let aro = verify_request(wallet, jwt, http_client_fn).await?;
         if self.client_id.as_str() != aro.client_id().0.as_str() {
-            bail!(
+            return Err(Error::protocol_invalid_req(&format!(
                 "Authorization Request and Request Object have different client ids: '{}' vs. '{}'",
                 self.client_id,
                 aro.client_id().0
-            );
+            )));
         }
+
         Ok(aro)
+    }
+
+    /// Try to resolve `authorization request jwt` and return the `response_uri`.
+    pub async fn resolve_response_uri<HC, F, RE>(self, http_client_fn: HC) -> Result<Url, Error>
+    where
+        HC: Fn(HttpRequest) -> F + Send,
+        F: Future<Output = Result<HttpResponse, RE>> + Send,
+        RE: std::error::Error + 'static + Send + Sync,
+    {
+        let jwt = match self.request_indirection {
+            RequestIndirection::ByValue(jwt) => jwt,
+            RequestIndirection::ByReference(url) => {
+                let resp = http_client_fn(create_get_request(&url, MIME_TYPE_TEXT_PLAIN))
+                    .await
+                    .map_err(|e| Error::Internal(anyhow!(e)))?;
+
+                if !resp.status_code.is_success() {
+                    return Err(Error::internal(anyhow!(
+                        "failed to get authorization request object"
+                    )));
+                }
+
+                String::from_utf8(resp.body).map_err(|e| {
+                    Error::internal(anyhow!("cannot parse authorization request object: {e}"))
+                })?
+            }
+        };
+
+        let aro: AuthorizationRequestObject = ssi::jwt::decode_unverified::<UntypedObject>(&jwt)
+            .map_err(|e| {
+                Error::internal(anyhow!(
+                    "unable to decode Authorization Request Object JWT: {e}"
+                ))
+            })?
+            .try_into()?;
+
+        Ok(aro.return_uri().to_owned())
     }
 
     /// Encode as [Url], using the `authorization_endpoint` as a base.
@@ -122,8 +164,8 @@ impl AuthorizationRequest {
     ///
     /// assert_eq!(authorization_request_url.as_str(), "example://?client_id=xyz&request=test");
     /// ```
-    pub fn to_url(self, mut authorization_endpoint: Url) -> Result<Url> {
-        let query = serde_urlencoded::to_string(self)?;
+    pub fn to_url(self, mut authorization_endpoint: Url) -> Result<Url, Error> {
+        let query = serde_urlencoded::to_string(self).map_err(|e| Error::Internal(e.into()))?;
         authorization_endpoint.set_query(Some(&query));
         Ok(authorization_endpoint)
     }
@@ -151,20 +193,26 @@ impl AuthorizationRequest {
     ///
     /// assert_eq!(request_object, "test");
     /// ```
-    pub fn from_url(url: &Url, authorization_endpoint: &Url) -> Result<Self> {
+    pub fn from_url(url: &Url, authorization_endpoint: &Url) -> Result<Self, Error> {
         let query = url
             .query()
-            .ok_or(anyhow!("missing query params in Authorization Request uri"))?
+            .ok_or(Error::protocol_invalid_req(
+                "missing query params in Authorization Request uri",
+            ))?
             .to_string();
         let fnd = url.authority();
         let exp = authorization_endpoint.authority();
         if fnd != exp {
-            bail!("unexpected authorization_endpoint authority, expected '{exp}', received '{fnd}'")
+            return Err(Error::protocol_invalid_req(&format!(
+                "unexpected authorization_endpoint authority, expected '{exp}', received '{fnd}'"
+            )));
         }
         let fnd = url.path();
         let exp = authorization_endpoint.path();
         if fnd != exp {
-            bail!("unexpected authorization_endpoint path, expected '{exp}', received '{fnd}'")
+            return Err(Error::protocol_invalid_req(&format!(
+                "unexpected authorization_endpoint path, expected '{exp}', received '{fnd}'"
+            )));
         }
         Self::from_query_params(&query)
     }
@@ -183,9 +231,11 @@ impl AuthorizationRequest {
     /// else { panic!("expected request-by-value") };
     /// assert_eq!(request_object, "test");
     /// ```
-    pub fn from_query_params(query_params: &str) -> Result<Self> {
-        serde_urlencoded::from_str(query_params)
-            .context("unable to parse Authorization Request from query params")
+    pub fn from_query_params(query_params: &str) -> Result<Self, Error> {
+        serde_urlencoded::from_str(query_params).map_err(|e| {
+            Error::protocol_invalid_req("unable to parse Authorization Request from query params")
+                .add_source(e.into())
+        })
     }
 }
 
@@ -201,28 +251,38 @@ impl AuthorizationRequestObject {
     pub async fn resolve_presentation_definition<HC, F, RE>(
         &self,
         http_client_fn: HC,
-    ) -> Result<PresentationDefinition>
+    ) -> Result<PresentationDefinition, Error>
     where
         HC: FnOnce(HttpRequest) -> F,
-        F: Future<Output = std::result::Result<HttpResponse, RE>>,
+        F: Future<Output = Result<HttpResponse, RE>>,
         RE: std::error::Error + 'static + Sync + Send,
     {
         match &self.5 {
             PresentationDefinitionIndirection::ByValue(by_value) => Ok(by_value.clone()),
             PresentationDefinitionIndirection::ByReference(by_reference) => {
-                let resp =
-                    http_client_fn(create_get_request(&by_reference, MIME_TYPE_JSON)).await?;
+                let resp = http_client_fn(create_get_request(&by_reference, MIME_TYPE_JSON))
+                    .await
+                    .map_err(|e| Error::Internal(anyhow!(e)))?;
 
                 if !resp.status_code.is_success() {
-                    bail!(format!(
-                        "failed to get Presentation Definition: status_code={}, response_body={}",
-                        resp.status_code,
-                        String::from_utf8(resp.body).unwrap_or("".to_owned())
+                    return Err(Error::protocol(
+                        InvalidPresentationDefinitionUri,
+                        &format!(
+                            "failed to get Presentation Definition: status_code={}",
+                            resp.status_code,
+                        ),
                     ));
                 }
 
-                let presentation_def = serde_json::from_slice::<Json>(&resp.body)?;
-                PresentationDefinition::try_from(presentation_def)
+                let presentation_def = serde_json::from_slice::<Json>(&resp.body)
+                    .map_err(|e| Error::internal(e.into()))?;
+                PresentationDefinition::try_from(presentation_def).map_err(|e| {
+                    Error::protocol(
+                        InvalidPresentationDefinitionReference,
+                        "failed to get parse Presentation Definition: {e}",
+                    )
+                    .add_source(e.into())
+                })
             }
         }
     }
@@ -271,12 +331,12 @@ impl From<AuthorizationRequestObject> for UntypedObject {
 impl TryFrom<UntypedObject> for AuthorizationRequestObject {
     type Error = Error;
 
-    fn try_from(value: UntypedObject) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: UntypedObject) -> Result<Self, Self::Error> {
         let client_id = value.get().parsing_error()?;
-        let client_id_scheme = value
-            .get()
-            .parsing_error()
-            .context("this library cannot handle requests that omit client_id_scheme")?;
+        let client_id_scheme = value.get().parsing_error().map_err(|e| {
+            Error::protocol_invalid_req("omitting a client_id_scheme is not supported")
+                .add_source(e.into())
+        })?;
 
         let redirect_uri = value.get::<RedirectUri>();
         let response_uri = value.get::<ResponseUri>();
@@ -287,19 +347,31 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             value.get_or_default::<ResponseMode>().parsing_error()?,
         ) {
             (_, _, ResponseMode::Unsupported(m)) => {
-                bail!("this 'response_mode' ({m}) is not currently supported")
+                return Err(Error::protocol_invalid_req(&format!(
+                    "this 'response_mode' ({m}) is not supported"
+                )))
             }
             (Some(_), Some(_), _) => {
-                bail!("'response_uri' and 'redirect_uri' are mutually exclusive")
+                return Err(Error::protocol_invalid_req(
+                    "'response_uri' and 'redirect_uri' are mutually exclusive",
+                ))
             }
             (_, None, response_mode @ ResponseMode::DirectPost)
             | (_, None, response_mode @ ResponseMode::DirectPostJwt) => {
-                bail!("'response_uri' is required for this 'response_mode' ({response_mode})")
+                return Err(Error::protocol_invalid_req(&format!(
+                    "'response_uri' is required for this 'response_mode' ({response_mode})"
+                )))
             }
             (_, Some(uri), response_mode @ ResponseMode::DirectPost)
-            | (_, Some(uri), response_mode @ ResponseMode::DirectPostJwt) => {
-                (uri.parsing_error()?.0, response_mode)
-            }
+            | (_, Some(uri), response_mode @ ResponseMode::DirectPostJwt) => (
+                uri.parsing_error()
+                    .map_err(|e| {
+                        Error::protocol_invalid_req("could not parse a 'response_uri'")
+                            .add_source(e.into())
+                    })?
+                    .0,
+                response_mode,
+            ),
         };
 
         let response_type: ResponseType = value.get().parsing_error()?;
@@ -308,17 +380,24 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             value.get::<PresentationDefinition>(),
             value.get::<PresentationDefinitionUri>(),
         ) {
-            (None, None) => bail!(
-                "one of 'presentation_definition' and 'presentation_definition_uri' are required"
-            ),
+            (None, None) => return Err(Error::protocol_invalid_req(
+                "one of 'presentation_definition' and 'presentation_definition_uri' are required",
+            )),
             (Some(_), Some(_)) => {
-                bail!("'presentation_definition' and 'presentation_definition_uri' are mutually exclusive")
+                return Err(Error::protocol_invalid_req(
+                    "'presentation_definition' and 'presentation_definition_uri' are mutually exclusive",
+                ))
             }
             (Some(by_value), None) => {
-                PresentationDefinitionIndirection::ByValue(by_value.parsing_error()?)
+                PresentationDefinitionIndirection::ByValue(by_value.parsing_error().map_err(|e| Error::protocol_invalid_req(
+                    "could parse a 'presentation_definition'",
+                ).add_source(e.into()))?)
             }
             (None, Some(by_reference)) => {
-                PresentationDefinitionIndirection::ByReference(by_reference.parsing_error()?.0)
+                PresentationDefinitionIndirection::ByReference(by_reference.parsing_error().map_err(|e| Error::protocol(
+                    InvalidPresentationDefinitionUri,
+                    "could parse a 'presentation_definition_uri'",
+                ).add_source(e.into()))?.0)
             }
         };
 

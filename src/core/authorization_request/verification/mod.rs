@@ -2,6 +2,7 @@ use super::{
     parameters::{ClientIdScheme, ClientMetadata, ResponseMode},
     AuthorizationRequestObject,
 };
+use crate::core::error::Error;
 use crate::core::{
     metadata::parameters::{
         verifier::{AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc},
@@ -13,7 +14,7 @@ use crate::core::{
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
 };
 use crate::wallet::Wallet;
-use anyhow::{bail, Context, Error, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use oauth2::{HttpRequest, HttpResponse};
 use std::future::Future;
@@ -34,7 +35,7 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'did' client verification not implemented")
+        Err(Error::protocol_access_denied("'did' client verification is not supported"))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `entity_id`.
@@ -43,7 +44,7 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'entity_id' client verification not implemented")
+        Err(Error::protocol_access_denied("'entity_id' client verification is not supported"))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `pre-registered`.
@@ -52,7 +53,7 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'preregistered' client verification not implemented")
+        Err(Error::protocol_access_denied("'preregistered' client verification is not supported"))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `redirect_uri`.
@@ -63,7 +64,7 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'redirect_uri' client verification not implemented")
+        Err(Error::protocol_access_denied("'redirect_uri' client verification is not supported"))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `verifier_attestation`.
@@ -71,8 +72,8 @@ pub trait RequestVerifier {
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
-    ) -> std::result::Result<(), Error> {
-        bail!("'verifier_attestation' client verification not implemented")
+    ) -> Result<(), Error> {
+        Err(Error::protocol_access_denied("'verifier_attestation' client verification is not supported"))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_dns`.
@@ -83,7 +84,7 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'x509_san_dns' client verification not implemented")
+        Err(Error::protocol_access_denied("'x509_san_dns' client verification is not supported"))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_uri`.
@@ -94,7 +95,7 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'x509_san_uri' client verification not implemented")
+        Err(Error::protocol_access_denied("'x509_san_uri' client verification is not supported"))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is any other value.
@@ -104,7 +105,7 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        bail!("'other' client verification not implemented")
+        Err(Error::protocol_access_denied("'other' client verification is not supported"))
     }
 }
 
@@ -112,7 +113,7 @@ pub(crate) async fn verify_request<W, HC, F, RE>(
     wallet: &W,
     jwt: String,
     http_client_fn: HC,
-) -> Result<AuthorizationRequestObject>
+) -> Result<AuthorizationRequestObject, Error>
 where
     W: Wallet + ?Sized,
     HC: Fn(HttpRequest) -> F + Send,
@@ -120,7 +121,10 @@ where
     RE: std::error::Error + 'static + Sync + Send,
 {
     let request: AuthorizationRequestObject = ssi::jwt::decode_unverified::<UntypedObject>(&jwt)
-        .context("unable to decode Authorization Request Object JWT")?
+        .map_err(|e| {
+            Error::protocol_invalid_req("unable to decode Authorization Request Object JWT")
+                .add_source(e.into())
+        })?
         .try_into()?;
 
     validate_request_against_metadata(wallet, &request, http_client_fn).await?;
@@ -160,10 +164,10 @@ where
         .0
         .contains(client_id_scheme)
     {
-        bail!(
+        return Err(Error::protocol_invalid_req(&format!(
             "wallet does not support client_id_scheme '{}'",
             client_id_scheme
-        )
+        )));
     }
 
     let client_metadata = ClientMetadata::resolve(request, http_client_fn).await?.0;
@@ -182,22 +186,22 @@ where
             wallet_metadata.get::<AuthorizationEncryptionAlgValuesSupported>()
         {
             if !supported_algs?.0.contains(&alg.0) {
-                bail!(
+                return Err(Error::protocol_invalid_req(&format!(
                     "unsupported {} '{}'",
                     AuthorizationEncryptedResponseAlg::KEY,
                     alg.0
-                )
+                )));
             }
         }
         if let Some(supported_encs) =
             wallet_metadata.get::<AuthorizationEncryptionEncValuesSupported>()
         {
             if !supported_encs?.0.contains(&enc.0) {
-                bail!(
+                return Err(Error::protocol_invalid_req(&format!(
                     "unsupported {} '{}'",
                     AuthorizationEncryptedResponseEnc::KEY,
                     enc.0
-                )
+                )));
             }
         }
     }
