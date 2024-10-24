@@ -1,8 +1,9 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use url::Url;
 
 use super::Verifier;
 use crate::core::authorization_request::parameters::ResponseUri;
+use crate::core::error::Error;
 use crate::core::{
     authorization_request::{
         self,
@@ -60,7 +61,7 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
         mut self,
         wallet_metadata: &WalletMetadata,
         pass_by_reference: ByReference,
-    ) -> Result<(Url, String)> {
+    ) -> Result<(Url, String), Error> {
         let client_id = self.verifier.client.id();
         let client_id_scheme = self.verifier.client.scheme();
 
@@ -68,7 +69,9 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
         let _ = self.request_parameters.insert(client_id_scheme.clone());
 
         let Some(presentation_definition) = self.presentation_definition else {
-            bail!("presentation definition is required, see `with_presentation_definition`")
+            return Err(Error::internal(anyhow!(
+                "presentation definition is required, see `with_presentation_definition`"
+            )));
         };
 
         let _ = self.request_parameters.insert(
@@ -90,7 +93,9 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
             .context("response mode is required, see `with_request_parameter`")?
             .context("error occurred when retrieving response mode")?
         {
-            ResponseMode::Unsupported(r) => bail!("unsupported response_mode: {r}"),
+            ResponseMode::Unsupported(r) => {
+                return Err(Error::internal(anyhow!("unsupported response_mode: {r}")))
+            }
             ResponseMode::DirectPost | ResponseMode::DirectPostJwt => {
                 self.request_parameters
                     .insert(ResponseUri(self.verifier.submission_endpoint.clone()));
@@ -102,7 +107,9 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
             .0
             .contains(client_id_scheme)
         {
-            bail!("the wallet does not support the client_id_scheme '{client_id_scheme}'")
+            return Err(Error::internal(anyhow!(
+                "the wallet does not support the client_id_scheme '{client_id_scheme}'"
+            )));
         }
 
         let authorization_request_object: AuthorizationRequestObject =
