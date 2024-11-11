@@ -54,3 +54,7 @@ impl<T: Clone> Deref for NonEmptyVec<T> {
         &self.0
     }
 }
+
+pub(crate) fn contains_all<T: PartialEq>(large: &[T], small: &[T]) -> bool {
+    small.iter().all(|item| large.contains(item))
+}

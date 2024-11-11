@@ -74,6 +74,8 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
             )));
         };
 
+        Self::validate_presentation_definition(&presentation_definition)?;
+
         let _ = self.request_parameters.insert(
             authorization_request::parameters::PresentationDefinition::try_from(
                 presentation_definition.clone(),
@@ -141,5 +143,23 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
         .context("unable to generate authorization request URL")?;
 
         Ok((authorization_request_url, authorization_request_jwt))
+    }
+
+    fn validate_presentation_definition(
+        presentation_definition: &PresentationDefinition,
+    ) -> Result<(), Error> {
+        if presentation_definition.id().is_empty() {
+            return Err(Error::internal(anyhow!(
+                "presentation definition 'id' cannot be empty"
+            )));
+        }
+
+        if presentation_definition.input_descriptors().is_empty() {
+            return Err(Error::internal(anyhow!(
+                "'input_descriptors' of presentation definition cannot be empty"
+            )));
+        }
+
+        Ok(())
     }
 }

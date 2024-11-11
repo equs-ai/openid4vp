@@ -1,6 +1,6 @@
 use crate::core::{
     authorization_request::parameters::{ClientIdScheme, ResponseType},
-    credential_format::{ClaimFormatDesignation, ClaimFormatMap},
+    credential_format::{ClaimFormatDesignation, ClaimFormatMap, ClaimFormatPayload},
     object::TypedParameter,
 };
 
@@ -160,6 +160,18 @@ impl TryFrom<VpFormatsSupported> for Json {
 impl VpFormatsSupported {
     pub fn is_claim_format_supported(&self, designation: &ClaimFormatDesignation) -> bool {
         self.0.contains_key(designation)
+    }
+
+    pub fn contains_claim_format_with_payload(
+        &self,
+        designation: &ClaimFormatDesignation,
+        payload: &ClaimFormatPayload,
+    ) -> bool {
+        if let Some(claim_payload) = self.0.get(designation) {
+            return claim_payload.contains(payload);
+        }
+
+        false
     }
 }
 

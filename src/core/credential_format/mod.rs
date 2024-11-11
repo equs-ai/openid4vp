@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::utils::contains_all;
 use serde::{Deserialize, Serialize};
 
 /// A Json object of claim formats.
@@ -40,7 +41,7 @@ pub enum ClaimFormat {
         #[serde(rename = "sd-jwt_alg_values")]
         jwt_alg_values: Vec<String>,
 
-        /// The algorithm that cann be used to sign the Key Binding of SD-JWT verifiable credential.
+        /// The algorithm that can be used to sign the Key Binding of SD-JWT verifiable credential.
         #[serde(rename = "kb-jwt_alg_values")]
         kb_alg_values: Vec<String>,
     },
@@ -156,6 +157,13 @@ pub enum ClaimFormatPayload {
     #[serde(rename = "proof_type")]
     ProofType(Vec<String>),
     #[serde(untagged)]
+    SdJwtAlgValues {
+        #[serde(rename = "sd-jwt_alg_values")]
+        sd_jwt_alg_values: Vec<String>,
+        #[serde(rename = "kb-jwt_alg_values")]
+        kb_jwt_alg_values: Vec<String>,
+    },
+    #[serde(untagged)]
     Json(serde_json::Value),
 }
 
@@ -176,6 +184,37 @@ impl ClaimFormatPayload {
         if let Self::ProofType(proof_types) = self {
             proof_types.push(proof_type);
         }
+    }
+
+    /// Checks if a payload of a format contains algorithms of other payload.
+    pub fn contains(&self, other: &ClaimFormatPayload) -> bool {
+        return match (self, other) {
+            (ClaimFormatPayload::Alg(algs), ClaimFormatPayload::Alg(other)) => {
+                contains_all(algs, other)
+            }
+            (
+                ClaimFormatPayload::AlgValuesSupported(algs),
+                ClaimFormatPayload::AlgValuesSupported(other),
+            ) => contains_all(algs, other),
+            (ClaimFormatPayload::ProofType(proofs), ClaimFormatPayload::ProofType(other)) => {
+                contains_all(proofs, other)
+            }
+            (
+                ClaimFormatPayload::SdJwtAlgValues {
+                    sd_jwt_alg_values: sd_jwt_algs,
+                    kb_jwt_alg_values: kb_jwt_algs,
+                },
+                ClaimFormatPayload::SdJwtAlgValues {
+                    sd_jwt_alg_values: other_sd_jwt_algs,
+                    kb_jwt_alg_values: other_kb_jwt_algs,
+                },
+            ) => {
+                contains_all(sd_jwt_algs, other_sd_jwt_algs)
+                    && contains_all(kb_jwt_algs, other_kb_jwt_algs)
+            }
+            (ClaimFormatPayload::Json(json), ClaimFormatPayload::Json(other)) => json.eq(other),
+            _ => false,
+        };
     }
 }
 
@@ -315,7 +354,7 @@ mod tests {
             },
             "sd_jwt_vc": {
               "sd-jwt_alg_values": ["ES256", "ES384"],
-              "kb_jwt_alg_values": ["ES256"]
+              "kb-jwt_alg_values": ["ES256"]
             },
             "com.example.custom_vc": {
               "version": "1.0",
