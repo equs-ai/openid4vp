@@ -188,7 +188,7 @@ impl ClaimFormatPayload {
 
     /// Checks if a payload of a format contains algorithms of other payload.
     pub fn contains(&self, other: &ClaimFormatPayload) -> bool {
-        return match (self, other) {
+        match (self, other) {
             (ClaimFormatPayload::Alg(algs), ClaimFormatPayload::Alg(other)) => {
                 contains_all(algs, other)
             }
@@ -214,7 +214,7 @@ impl ClaimFormatPayload {
             }
             (ClaimFormatPayload::Json(json), ClaimFormatPayload::Json(other)) => json.eq(other),
             _ => false,
-        };
+        }
     }
 }
 
