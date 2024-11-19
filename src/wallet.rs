@@ -72,6 +72,19 @@ pub trait Wallet: RequestVerifier + Sync {
 
                 create_post_request(response_uri, &body, MIME_TYPE_FORM_URLENCODED)
             }
+            ResponseMode::Fragment | ResponseMode::FragmentJwt => {
+                let AuthorizationResponse::Unencoded(un_encoded) = response else {
+                    return Err(Error::internal(anyhow!(
+                        "unexpected AuthorizationResponse format"
+                    )));
+                };
+
+                let url_encoded = un_encoded.into_x_www_form_urlencoded()?;
+                let mut redirect_url = response_uri.clone();
+                redirect_url.set_fragment(Some(&url_encoded));
+
+                return Ok(Some(redirect_url));
+            }
             ResponseMode::Unsupported(rm) => {
                 return Err(Error::internal(anyhow!("unsupported response_mode {rm}")))
             }

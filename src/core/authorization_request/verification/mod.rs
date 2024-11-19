@@ -1,7 +1,8 @@
 use super::{
     parameters::{ClientIdScheme, ClientMetadata, ResponseMode},
-    AuthorizationRequestObject,
+    AuthorizationRequestObject, FetchedAuthorizationRequest,
 };
+use crate::core::authorization_request::parameters::ClientId;
 use crate::core::error::Error;
 use crate::core::{
     metadata::parameters::{
@@ -62,7 +63,7 @@ pub trait RequestVerifier {
     async fn redirect_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        request_jwt: String,
+        client_id: &ClientId,
     ) -> Result<(), Error> {
         Err(Error::protocol_access_denied("'redirect_uri' client verification is not supported"))
     }
@@ -111,7 +112,7 @@ pub trait RequestVerifier {
 
 pub(crate) async fn verify_request<W, HC, F, RE>(
     wallet: &W,
-    jwt: String,
+    fetched_request: FetchedAuthorizationRequest,
     http_client_fn: HC,
 ) -> Result<AuthorizationRequestObject, Error>
 where
@@ -120,27 +121,38 @@ where
     F: Future<Output = Result<HttpResponse, RE>> + Send,
     RE: std::error::Error + 'static + Sync + Send,
 {
-    let request: AuthorizationRequestObject = ssi::jwt::decode_unverified::<UntypedObject>(&jwt)
-        .map_err(|e| {
-            Error::protocol_invalid_req("unable to decode Authorization Request Object JWT")
-                .add_source(e.into())
-        })?
-        .try_into()?;
+    let request = match fetched_request {
+        FetchedAuthorizationRequest::Plain(request) => {
+            wallet.redirect_uri(&request, request.client_id()).await?;
+            request
+        }
+        FetchedAuthorizationRequest::UnverifiedJwt(jwt) => {
+            let request: AuthorizationRequestObject =
+                ssi::jwt::decode_unverified::<UntypedObject>(&jwt)
+                    .map_err(|e| {
+                        Error::protocol_invalid_req(
+                            "unable to decode Authorization Request Object JWT",
+                        )
+                        .add_source(e.into())
+                    })?
+                    .try_into()?;
+
+            match request.client_id_scheme() {
+                ClientIdScheme::Did => wallet.did(&request, jwt).await?,
+                ClientIdScheme::EntityId => wallet.entity_id(&request, jwt).await?,
+                ClientIdScheme::PreRegistered => wallet.preregistered(&request, jwt).await?,
+                ClientIdScheme::VerifierAttestation => wallet.verifier_attestation(&request, jwt).await?,
+                ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
+                ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
+                ClientIdScheme::Other(scheme) => wallet.other(scheme, &request, jwt).await?,
+                _ => {}
+            };
+
+            request
+        }
+    };
 
     validate_request_against_metadata(wallet, &request, http_client_fn).await?;
-
-    let client_id_scheme = request.client_id_scheme();
-
-    match client_id_scheme {
-        ClientIdScheme::Did => wallet.did(&request, jwt).await?,
-        ClientIdScheme::EntityId => wallet.entity_id(&request, jwt).await?,
-        ClientIdScheme::PreRegistered => wallet.preregistered(&request, jwt).await?,
-        ClientIdScheme::RedirectUri => wallet.redirect_uri(&request, jwt).await?,
-        ClientIdScheme::VerifierAttestation => wallet.verifier_attestation(&request, jwt).await?,
-        ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
-        ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
-        ClientIdScheme::Other(scheme) => wallet.other(scheme, &request, jwt).await?,
-    };
 
     Ok(request)
 }

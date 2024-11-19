@@ -2,13 +2,14 @@ use anyhow::{anyhow, Context, Result};
 use url::Url;
 
 use super::Verifier;
-use crate::core::authorization_request::parameters::ResponseUri;
+use crate::core::authorization_request::parameters::{RedirectUri, ResponseUri};
+use crate::core::authorization_request::SignedAuthorizationRequest;
 use crate::core::error::Error;
 use crate::core::{
     authorization_request::{
         self,
         parameters::{ResponseMode, ResponseType},
-        AuthorizationRequest, AuthorizationRequestObject, RequestIndirection,
+        AuthorizationRequestObject, RequestIndirection,
     },
     metadata::{
         parameters::wallet::{AuthorizationEndpoint, ClientIdSchemesSupported},
@@ -26,6 +27,12 @@ pub struct RequestBuilder<'a, C: Client + Send + Sync> {
     presentation_definition: Option<PresentationDefinition>,
     request_parameters: UntypedObject,
     verifier: &'a Verifier<C>,
+}
+
+#[derive(Debug, Clone)]
+pub enum RequestType {
+    Plain,
+    SignedJwt(ByReference),
 }
 
 impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
@@ -60,8 +67,8 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
     pub async fn build(
         mut self,
         wallet_metadata: &WalletMetadata,
-        pass_by_reference: ByReference,
-    ) -> Result<(Url, String), Error> {
+        request_type: RequestType,
+    ) -> Result<(Url, Option<String>), Error> {
         let client_id = self.verifier.client.id();
         let client_id_scheme = self.verifier.client.scheme();
 
@@ -89,21 +96,6 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
             .context("response type is required, see `with_request_parameter`")?
             .context("error occurred when retrieving response type")?;
 
-        match self
-            .request_parameters
-            .get::<ResponseMode>()
-            .context("response mode is required, see `with_request_parameter`")?
-            .context("error occurred when retrieving response mode")?
-        {
-            ResponseMode::Unsupported(r) => {
-                return Err(Error::internal(anyhow!("unsupported response_mode: {r}")))
-            }
-            ResponseMode::DirectPost | ResponseMode::DirectPostJwt => {
-                self.request_parameters
-                    .insert(ResponseUri(self.verifier.submission_endpoint.clone()));
-            }
-        }
-
         if !wallet_metadata
             .get_or_default::<ClientIdSchemesSupported>()?
             .0
@@ -114,35 +106,64 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
             )));
         }
 
+        match self
+            .request_parameters
+            .get::<ResponseMode>()
+            .context("error occurred when retrieving response mode")?
+        {
+            Ok(ResponseMode::Unsupported(r)) => {
+                return Err(Error::internal(anyhow!("unsupported response_mode: {r}")))
+            }
+            Ok(ResponseMode::DirectPost) | Ok(ResponseMode::DirectPostJwt) => {
+                self.request_parameters
+                    .insert(ResponseUri(self.verifier.submission_endpoint.clone()));
+            }
+            Ok(ResponseMode::Fragment) | Ok(ResponseMode::FragmentJwt) | Err(_) => {
+                self.request_parameters
+                    .insert(RedirectUri(self.verifier.submission_endpoint.clone()));
+            }
+        }
         let authorization_request_object: AuthorizationRequestObject =
             self.request_parameters.try_into().context(
                 "unable to construct the Authorization Request from provided request parameters",
             )?;
-
-        let authorization_request_jwt = self
-            .verifier
-            .client
-            .generate_request_object_jwt(&authorization_request_object)
-            .await?;
-
-        let request_indirection = match pass_by_reference {
-            ByReference::False => RequestIndirection::ByValue(authorization_request_jwt.clone()),
-            ByReference::True { at } => RequestIndirection::ByReference(at),
-        };
 
         let authorization_endpoint = wallet_metadata
             .get::<AuthorizationEndpoint>()
             .parsing_error()?
             .0;
 
-        let authorization_request_url = AuthorizationRequest {
-            client_id: client_id.0.clone(),
-            request_indirection,
-        }
-        .to_url(authorization_endpoint)
-        .context("unable to generate authorization request URL")?;
+        match request_type {
+            RequestType::Plain => {
+                let authorization_request_url = authorization_request_object
+                    .to_url(authorization_endpoint)
+                    .context("unable to generate authorization request URL")?;
 
-        Ok((authorization_request_url, authorization_request_jwt))
+                Ok((authorization_request_url, None))
+            },
+            RequestType::SignedJwt(pass_by_reference) => {
+                let auth_req_jwt = self
+                    .verifier
+                    .client
+                    .generate_request_object_jwt(&authorization_request_object)
+                    .await?;
+
+                let request_indirection = match pass_by_reference {
+                    ByReference::False => RequestIndirection::ByValue(auth_req_jwt.clone()),
+                    ByReference::True { at } => RequestIndirection::ByReference(at),
+                };
+                let signed_auth_req = SignedAuthorizationRequest {
+                    client_id: client_id.0.clone(),
+                    request_indirection,
+                };
+
+                let authorization_request_url = signed_auth_req
+                    .to_url(authorization_endpoint)
+                    .context("unable to generate authorization request URL")?;
+
+                Ok((authorization_request_url, Some(auth_req_jwt)))
+            }
+        }
     }
 
     fn validate_presentation_definition(

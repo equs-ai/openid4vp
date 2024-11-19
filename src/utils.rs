@@ -1,4 +1,5 @@
 use anyhow::{bail, Error};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
@@ -57,4 +58,14 @@ impl<T: Clone> Deref for NonEmptyVec<T> {
 
 pub(crate) fn contains_all<T: PartialEq>(large: &[T], small: &[T]) -> bool {
     small.iter().all(|item| large.contains(item))
+}
+
+pub(crate) fn from_string_or_value<T>(value: &serde_json::Value) -> serde_json::Result<T>
+where
+    T: DeserializeOwned,
+{
+    match value {
+        serde_json::Value::String(ref json_str) => serde_json::from_str(json_str),
+        _ => serde_json::from_value(value.clone()),
+    }
 }

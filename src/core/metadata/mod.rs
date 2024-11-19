@@ -2,11 +2,12 @@ use super::credential_format::*;
 
 use std::ops::{Deref, DerefMut};
 
+use self::parameters::wallet::{AuthorizationEndpoint, VpFormatsSupported};
+use crate::core::authorization_request::parameters::ClientIdScheme;
+use crate::core::metadata::parameters::wallet::ClientIdSchemesSupported;
 use anyhow::{Error, Result};
 use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
 use serde::{Deserialize, Serialize};
-
-use self::parameters::wallet::{AuthorizationEndpoint, VpFormatsSupported};
 
 use super::{
     authorization_request::parameters::ResponseType,
@@ -39,6 +40,19 @@ impl WalletMetadata {
     /// Return a reference to the vp formats supported.
     pub fn vp_formats_supported(&self) -> &VpFormatsSupported {
         &self.2
+    }
+
+    /// Check that a client-id-schema is supported.
+    pub fn is_client_id_schema_supported(&self, client_id_scheme: &ClientIdScheme) -> bool {
+        let Some(Ok(result)) = self
+            .0
+            .get::<ClientIdSchemesSupported>()
+            .map(|cm_result| cm_result.and_then(|cm| Ok(cm.0.contains(client_id_scheme))))
+        else {
+            return false;
+        };
+
+        result
     }
 
     /// Return a mutable reference to the vp formats supported.
