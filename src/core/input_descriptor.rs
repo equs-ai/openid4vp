@@ -87,6 +87,12 @@ impl InputDescriptor {
         self.id.as_str()
     }
 
+    /// Set constraints of the input descriptor.
+    pub fn set_constraints(mut self, constraints: Constraints) -> Self {
+        self.constraints = constraints;
+        self
+    }
+
     /// Return the constraints of the input descriptor.
     pub fn constraints(&self) -> &Constraints {
         &self.constraints
@@ -294,6 +300,12 @@ impl Constraints {
     /// Returns the fields of the constraints object.
     pub fn fields(&self) -> &Vec<ConstraintsField> {
         self.fields.as_ref()
+    }
+
+    /// Returns the fields of the constraints object as mutable.
+
+    pub fn fields_as_mut(&mut self) -> &mut Vec<ConstraintsField> {
+        self.fields.as_mut()
     }
 
     /// Set the limit disclosure value.
