@@ -19,6 +19,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use oauth2::{HttpRequest, HttpResponse};
 use std::future::Future;
+use url::Url;
 
 pub mod did;
 pub mod verifier;
@@ -63,7 +64,7 @@ pub trait RequestVerifier {
     async fn redirect_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        client_id: &ClientId,
+        redirect_uri: &Url,
     ) -> Result<(), Error> {
         Err(Error::protocol_access_denied("'redirect_uri' client verification is not supported"))
     }
@@ -123,7 +124,7 @@ where
 {
     let request = match fetched_request {
         FetchedAuthorizationRequest::Plain(request) => {
-            wallet.redirect_uri(&request, request.client_id()).await?;
+            wallet.redirect_uri(&request, request.return_uri()).await?;
             request
         }
         FetchedAuthorizationRequest::UnverifiedJwt(jwt) => {

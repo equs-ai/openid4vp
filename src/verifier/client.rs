@@ -1,6 +1,6 @@
 use std::{fmt::Debug, sync::Arc};
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{anyhow, bail, Context as _, Result};
 use async_trait::async_trait;
 use base64::prelude::*;
 use serde_json::{json, Value as Json};
@@ -16,7 +16,6 @@ use crate::core::authorization_request::{
     parameters::{ClientId, ClientIdScheme},
     AuthorizationRequestObject,
 };
-
 use super::request_signer::RequestSigner;
 
 #[async_trait]
@@ -202,4 +201,33 @@ async fn make_jwt<S: RequestSigner + ?Sized>(
     let signature_b64 = BASE64_URL_SAFE_NO_PAD.encode(signature);
 
     Ok(format!("{header_b64}.{body_b64}.{signature_b64}"))
+}
+
+/// A [Client] with the `redirect_uri` Client Identifier.
+#[derive(Debug, Clone)]
+pub struct RedirectUriClient {
+    id: ClientId,
+}
+
+impl RedirectUriClient {
+    pub fn new(id: ClientId) -> Self {
+        Self { id }
+    }
+}
+#[async_trait]
+impl Client for RedirectUriClient {
+    fn id(&self) -> &ClientId {
+        &self.id
+    }
+
+    fn scheme(&self) -> &ClientIdScheme {
+        &ClientIdScheme::RedirectUri
+    }
+
+    async fn generate_request_object_jwt(
+        &self,
+        _: &AuthorizationRequestObject,
+    ) -> Result<String> {
+        Err(anyhow!("generation of signed jwt is not supported in 'redirect_uri' client identifier"))
+    }
 }
