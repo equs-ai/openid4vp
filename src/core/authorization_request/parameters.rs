@@ -4,6 +4,7 @@ use crate::core::{
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
     presentation_definition::PresentationDefinition as PresentationDefinitionParsed,
 };
+use crate::utils::from_string_or_value;
 use anyhow::{bail, Context, Error, Ok};
 use oauth2::{HttpRequest, HttpResponse};
 use serde::{Deserialize, Serialize};
@@ -123,7 +124,7 @@ impl TryFrom<Json> for ClientMetadata {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(serde_json::from_value(value).map(ClientMetadata)?)
+        Ok(from_string_or_value(&value).map(ClientMetadata)?)
     }
 }
 
@@ -323,14 +324,21 @@ impl TryFrom<Json> for ResponseUri {
 
 const DIRECT_POST: &str = "direct_post";
 const DIRECT_POST_JWT: &str = "direct_post.jwt";
+const FRAGMENT: &str = "fragment";
+const FRAGMENT_JWT: &str = "fragment.jwt";
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(into = "String", from = "String")]
 pub enum ResponseMode {
     /// The `direct_post` response mode as defined in OID4VP.
     DirectPost,
     /// The `direct_post.jwt` response mode as defined in OID4VP.
     DirectPostJwt,
+    /// The `fragment` response mode as defined in OID4VP.
+    #[default]
+    Fragment,
+    /// The `fragment.jwt` response mode as defined in OID4VP.
+    FragmentJwt,
     /// A ResponseMode that is unsupported by this library.
     Unsupported(String),
 }
@@ -344,6 +352,8 @@ impl From<String> for ResponseMode {
         match s.as_str() {
             DIRECT_POST => ResponseMode::DirectPost,
             DIRECT_POST_JWT => ResponseMode::DirectPostJwt,
+            FRAGMENT => ResponseMode::Fragment,
+            FRAGMENT_JWT => ResponseMode::FragmentJwt,
             _ => ResponseMode::Unsupported(s),
         }
     }
@@ -354,6 +364,8 @@ impl From<ResponseMode> for String {
         match s {
             ResponseMode::DirectPost => DIRECT_POST.into(),
             ResponseMode::DirectPostJwt => DIRECT_POST_JWT.into(),
+            ResponseMode::Fragment => FRAGMENT.into(),
+            ResponseMode::FragmentJwt => FRAGMENT_JWT.into(),
             ResponseMode::Unsupported(u) => u,
         }
     }
@@ -379,15 +391,11 @@ impl fmt::Display for ResponseMode {
         match self {
             ResponseMode::DirectPost => DIRECT_POST,
             ResponseMode::DirectPostJwt => DIRECT_POST_JWT,
+            ResponseMode::Fragment => FRAGMENT,
+            ResponseMode::FragmentJwt => FRAGMENT_JWT,
             ResponseMode::Unsupported(u) => u,
         }
         .fmt(f)
-    }
-}
-
-impl Default for ResponseMode {
-    fn default() -> Self {
-        Self::Unsupported("fragment".into())
     }
 }
 
@@ -396,6 +404,8 @@ impl ResponseMode {
         match self {
             ResponseMode::DirectPost => Ok(false),
             ResponseMode::DirectPostJwt => Ok(true),
+            ResponseMode::Fragment => Ok(false),
+            ResponseMode::FragmentJwt => Ok(true),
             ResponseMode::Unsupported(rm) => bail!("unsupported response_mode: {rm}"),
         }
     }
@@ -506,7 +516,8 @@ impl TryFrom<Json> for PresentationDefinition {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        let parsed = serde_json::from_value(value.clone())?;
+        let parsed = from_string_or_value(&value)?;
+
         Ok(Self { raw: value, parsed })
     }
 }
