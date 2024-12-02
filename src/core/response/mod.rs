@@ -2,12 +2,12 @@ use super::object::{ParsingErrorContext, UntypedObject};
 
 use std::collections::BTreeMap;
 
+use self::parameters::{PresentationSubmission, VpToken};
+use crate::core::response::parameters::IdToken;
 use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use url::Url;
-
-use self::parameters::{PresentationSubmission, VpToken};
 
 pub mod parameters;
 
@@ -42,6 +42,7 @@ pub struct UnencodedAuthorizationResponse(
     pub UntypedObject,
     pub VpToken,
     pub PresentationSubmission,
+    pub Option<IdToken>,
 );
 
 impl UnencodedAuthorizationResponse {
@@ -50,6 +51,9 @@ impl UnencodedAuthorizationResponse {
         let mut inner = self.0;
         inner.insert(self.1);
         inner.insert(self.2);
+        if let Some(id_token) = self.3 {
+            inner.insert(id_token);
+        }
         serde_urlencoded::to_string(inner.flatten_for_form()?)
             .context("failed to encode response as 'application/x-www-form-urlencoded'")
     }
@@ -62,6 +66,11 @@ impl UnencodedAuthorizationResponse {
     /// Return the Presentation Submission.
     pub fn presentation_submission(&self) -> &PresentationSubmission {
         &self.2
+    }
+
+    /// Return the Self Issued Id Token.
+    pub fn id_token(&self) -> &Option<IdToken> {
+        &self.3
     }
 }
 
@@ -90,7 +99,12 @@ impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
     fn try_from(value: UntypedObject) -> Result<Self, Self::Error> {
         let vp_token = value.get().parsing_error()?;
         let presentation_submission = value.get().parsing_error()?;
-        Ok(Self(value, vp_token, presentation_submission))
+        let id_token = value
+            .get::<IdToken>()
+            .map(|value| value.parsing_error())
+            .transpose()?;
+
+        Ok(Self(value, vp_token, presentation_submission, id_token))
     }
 }
 

@@ -3,33 +3,56 @@ use super::credential_format::*;
 use std::ops::{Deref, DerefMut};
 
 use self::parameters::wallet::{AuthorizationEndpoint, VpFormatsSupported};
-use crate::core::authorization_request::parameters::ClientIdScheme;
-use crate::core::metadata::parameters::wallet::ClientIdSchemesSupported;
-use anyhow::{Error, Result};
-use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
-use serde::{Deserialize, Serialize};
-
 use super::{
     authorization_request::parameters::ResponseType,
     object::{ParsingErrorContext, UntypedObject},
 };
+use crate::core::authorization_request::parameters::ClientIdScheme;
+use crate::core::metadata::parameters::wallet::{
+    ClientIdSchemesSupported, IdTokenSigningAlgValuesSupported, IdTokenTypesSupported,
+    ScopesSupported,
+};
+use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
+use anyhow::{Error, Result};
+use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
+use serde::{Deserialize, Serialize};
 
 pub mod parameters;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "UntypedObject", into = "UntypedObject")]
-pub struct WalletMetadata(UntypedObject, AuthorizationEndpoint, VpFormatsSupported);
+pub struct WalletMetadata(
+    UntypedObject,
+    AuthorizationEndpoint,
+    VpFormatsSupported,
+    ResponseTypesSupported,
+    ClientIdSchemesSupported,
+    RequestObjectSigningAlgValuesSupported,
+    ScopesSupported,
+    SubjectSyntaxTypesSupported,
+    IdTokenTypesSupported,
+    IdTokenSigningAlgValuesSupported,
+);
 
 impl WalletMetadata {
     pub fn new(
         authorization_endpoint: AuthorizationEndpoint,
         vp_formats_supported: VpFormatsSupported,
+        response_types_supported: ResponseTypesSupported,
         other: Option<UntypedObject>,
     ) -> Self {
         Self(
             other.unwrap_or_default(),
             authorization_endpoint,
             vp_formats_supported,
+            response_types_supported,
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
         )
     }
 
@@ -42,22 +65,29 @@ impl WalletMetadata {
         &self.2
     }
 
-    /// Check that a client-id-schema is supported.
-    pub fn is_client_id_schema_supported(&self, client_id_scheme: &ClientIdScheme) -> bool {
-        let Some(Ok(result)) = self
-            .0
-            .get::<ClientIdSchemesSupported>()
-            .map(|cm_result| cm_result.and_then(|cm| Ok(cm.0.contains(client_id_scheme))))
-        else {
-            return false;
-        };
-
-        result
-    }
-
     /// Return a mutable reference to the vp formats supported.
     pub fn vp_formats_supported_mut(&mut self) -> &mut VpFormatsSupported {
         &mut self.2
+    }
+
+    /// Return a reference to the supported response types.
+    pub fn response_types_supported(&self) -> &ResponseTypesSupported {
+        &self.3
+    }
+
+    /// Return a reference to the supported client_id schemas.
+    pub fn client_id_schema_supported(&self) -> &ClientIdSchemesSupported {
+        &self.4
+    }
+
+    /// Check that a client-id-schema is supported.
+    pub fn is_client_id_schema_supported(&self, client_id_scheme: &ClientIdScheme) -> bool {
+        self.client_id_schema_supported().0.contains(client_id_scheme)
+    }
+
+    /// Return a reference to the supported response types.
+    pub fn subject_syntax_types_supported(&self) -> &SubjectSyntaxTypesSupported {
+        &self.7
     }
 
     /// The static wallet metadata bound to `openid4vp:`:
@@ -129,7 +159,27 @@ impl TryFrom<UntypedObject> for WalletMetadata {
     fn try_from(value: UntypedObject) -> Result<Self, Self::Error> {
         let authorization_endpoint = value.get().parsing_error()?;
         let vp_formats_supported = value.get().parsing_error()?;
-        Ok(Self(value, authorization_endpoint, vp_formats_supported))
+        let response_types_supported = value.get().parsing_error()?;
+        let client_id_schemes_supported = value.get().parsing_error().unwrap_or_default();
+        let request_object_signing_alg_values_supported =
+            value.get().parsing_error().unwrap_or_default();
+        let scopes_supported = value.get().parsing_error().unwrap_or_default();
+        let subject_syntax_types_supported = value.get().parsing_error().unwrap_or_default();
+        let id_token_types_supported = value.get().parsing_error().unwrap_or_default();
+        let id_token_signing_alg_values_supported = value.get().parsing_error().unwrap_or_default();
+
+        Ok(Self(
+            value,
+            authorization_endpoint,
+            vp_formats_supported,
+            response_types_supported,
+            client_id_schemes_supported,
+            request_object_signing_alg_values_supported,
+            scopes_supported,
+            subject_syntax_types_supported,
+            id_token_types_supported,
+            id_token_signing_alg_values_supported,
+        ))
     }
 }
 

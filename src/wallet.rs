@@ -1,11 +1,14 @@
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use oauth2::{HttpRequest, HttpResponse};
+use serde_json::json;
 use std::future::Future;
 use tracing::warn;
 use url::Url;
 
+use crate::core::authorization_request::parameters::Nonce;
 use crate::core::error::Error;
+use crate::core::response::parameters::IdTokenBody;
 use crate::core::util::http::{create_post_request, MIME_TYPE_FORM_URLENCODED};
 use crate::core::{
     authorization_request::{
@@ -15,6 +18,8 @@ use crate::core::{
     metadata::WalletMetadata,
     response::{AuthorizationResponse, PostRedirection},
 };
+use crate::signer::Signer;
+use crate::utils::generate_jwt;
 
 #[async_trait]
 pub trait Wallet: RequestVerifier + Sync {
@@ -108,4 +113,53 @@ pub trait Wallet: RequestVerifier + Sync {
             .ok()
             .map(|PostRedirection { redirect_uri }| redirect_uri))
     }
+
+    async fn generate_did_based_id_token<S>(
+        &self,
+        did_url: &ssi::did::DIDURL,
+        params: IdTokenParams,
+        signer: S,
+    ) -> Result<String>
+    where
+        S: Signer + Send + Sync,
+    {
+        let IdTokenParams {
+            audience,
+            nonce,
+            lifetime,
+            other,
+        } = params;
+        let now = time::OffsetDateTime::now_utc();
+        let expiration_time = now + lifetime;
+
+        let id_token = IdTokenBody {
+            issuer: did_url.did.to_owned(),
+            subject: did_url.did.to_owned(),
+            audience,
+            nonce: nonce.into(),
+            other,
+            expiration_time: expiration_time.unix_timestamp(),
+            sub_jwk: None,
+            issued_at: Some(now.unix_timestamp()),
+        };
+
+        let algorithm = signer
+            .alg()
+            .context("failed to retrieve signing algorithm")?;
+
+        let header = json!({
+            "alg": algorithm,
+            "kid": did_url,
+            "typ": "JWT"
+        });
+
+        generate_jwt(header, &id_token, &signer).await
+    }
+}
+
+pub struct IdTokenParams {
+    pub audience: String,
+    pub nonce: Nonce,
+    pub lifetime: time::Duration,
+    pub other: Option<serde_json::Map<String, serde_json::Value>>,
 }

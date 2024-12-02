@@ -3,10 +3,44 @@ use crate::core::object::TypedParameter;
 use crate::core::presentation_submission::PresentationSubmission as PresentationSubmissionParsed;
 
 use anyhow::{bail, Error};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
+use ssi::jwk::JWK;
 
 #[derive(Debug, Clone)]
-pub struct IdToken(pub String);
+pub struct IdToken {
+    raw: String,
+    parsed: IdTokenBody,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct IdTokenBody {
+    #[serde(rename = "iss")]
+    pub issuer: String,
+    #[serde(rename = "sub")]
+    pub subject: String,
+    #[serde(rename = "aud")]
+    pub audience: String,
+    pub nonce: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sub_jwk: Option<JWK>,
+    #[serde(rename = "iat")]
+    pub issued_at: Option<i64>,
+    #[serde(rename = "exp")]
+    pub expiration_time: i64,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub other: Option<Map<String, Json>>,
+}
+
+impl IdToken {
+    pub fn parsed_body(self) -> IdTokenBody {
+        self.parsed
+    }
+
+    pub fn jwt(self) -> String {
+        self.raw
+    }
+}
 
 impl TypedParameter for IdToken {
     const KEY: &'static str = "id_token";
@@ -15,14 +49,29 @@ impl TypedParameter for IdToken {
 impl TryFrom<Json> for IdToken {
     type Error = Error;
 
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        serde_json::from_value(value).map(Self).map_err(Into::into)
+    fn try_from(raw: Json) -> Result<Self, Self::Error> {
+        let Json::String(raw) = raw else {
+            bail!("IdToken must be json string")
+        };
+        let parsed = ssi::jwt::decode_unverified(&raw)?;
+
+        Ok(Self { raw, parsed })
+    }
+}
+
+impl TryFrom<String> for IdToken {
+    type Error = Error;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        let parsed = ssi::jwt::decode_unverified(&raw)?;
+
+        Ok(Self { raw, parsed })
     }
 }
 
 impl From<IdToken> for Json {
     fn from(value: IdToken) -> Self {
-        value.0.into()
+        Json::String(value.raw)
     }
 }
 

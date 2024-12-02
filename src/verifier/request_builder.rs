@@ -2,9 +2,10 @@ use anyhow::{anyhow, Context, Result};
 use url::Url;
 
 use super::Verifier;
-use crate::core::authorization_request::parameters::{RedirectUri, ResponseUri};
+use crate::core::authorization_request::parameters::{ClientMetadata, RedirectUri, ResponseUri};
 use crate::core::authorization_request::SignedAuthorizationRequest;
 use crate::core::error::Error;
+use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
 use crate::core::{
     authorization_request::{
         self,
@@ -75,13 +76,14 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
         let _ = self.request_parameters.insert(client_id.clone());
         let _ = self.request_parameters.insert(client_id_scheme.clone());
 
-        let Some(presentation_definition) = self.presentation_definition else {
+        let Some(ref presentation_definition) = self.presentation_definition else {
             return Err(Error::internal(anyhow!(
                 "presentation definition is required, see `with_presentation_definition`"
             )));
         };
 
-        Self::validate_presentation_definition(&presentation_definition)?;
+        Self::validate_presentation_definition(presentation_definition)?;
+        self.validate_response_type(&wallet_metadata)?;
 
         let _ = self.request_parameters.insert(
             authorization_request::parameters::PresentationDefinition::try_from(
@@ -89,12 +91,6 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
             )
             .context("failed to construct PresentationDefinition request parameter")?,
         );
-
-        let _ = self
-            .request_parameters
-            .get::<ResponseType>()
-            .context("response type is required, see `with_request_parameter`")?
-            .context("error occurred when retrieving response type")?;
 
         if !wallet_metadata
             .get_or_default::<ClientIdSchemesSupported>()?
@@ -140,7 +136,7 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
                     .context("unable to generate authorization request URL")?;
 
                 Ok((authorization_request_url, None))
-            },
+            }
             RequestType::SignedJwt(pass_by_reference) => {
                 let auth_req_jwt = self
                     .verifier
@@ -179,6 +175,50 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
             return Err(Error::internal(anyhow!(
                 "'input_descriptors' of presentation definition cannot be empty"
             )));
+        }
+
+        Ok(())
+    }
+
+    fn validate_response_type(&self, wallet_metadata: &WalletMetadata) -> Result<(), Error> {
+        let response_type = self
+            .request_parameters
+            .get::<ResponseType>()
+            .context("response type is required, see `with_request_parameter`")?
+            .context("error occurred when retrieving response type")?;
+
+        if !wallet_metadata
+            .response_types_supported()
+            .0
+            .contains(&response_type)
+        {
+            return Err(Error::internal(anyhow!(
+                "response type = '{}' is not supported by the wallet", String::from(response_type)
+            )));
+        }
+
+        if ResponseType::VpTokenIdToken == response_type {
+            let subject_syntax_types_supported = self
+                .request_parameters
+                .get::<ClientMetadata>()
+                .context("'client_metadata' is required while building an authorization request with 'vp_token id_token' response type")?
+                .context("error occurred when retrieving 'client_metadata'")?
+                .0.get::<SubjectSyntaxTypesSupported>()
+                .context("'subject_syntax_types_supported' is required while building an authorization request with 'vp_token id_token' response type")?
+                .context("error occurred when retrieving 'subject_syntax_types_supported'")?;
+
+            let unsupported = subject_syntax_types_supported.0.iter().find(|s| {
+                !wallet_metadata
+                    .subject_syntax_types_supported()
+                    .0
+                    .contains(&s)
+            });
+
+            if let Some(unsupported) = unsupported {
+                return Err(Error::internal(anyhow!(
+                    "subject syntax type = '{unsupported}' is not supported by the wallet"
+                )));
+            }
         }
 
         Ok(())

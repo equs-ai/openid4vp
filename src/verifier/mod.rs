@@ -10,7 +10,6 @@ use crate::core::object::{TypedParameter, UntypedObject};
 pub mod by_reference;
 pub mod client;
 pub mod request_builder;
-pub mod request_signer;
 
 /// An OpenID4VP verifier, also known as the client.
 #[derive(Debug, Clone)]

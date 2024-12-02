@@ -413,6 +413,7 @@ impl ResponseMode {
 
 const VP_TOKEN: &str = "vp_token";
 const VP_TOKEN_ID_TOKEN: &str = "vp_token id_token";
+const SUBJECT_SIGNED_ID_TOKEN_TYPE: &str = "subject_signed_id_token";
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(into = "String", from = "String")]
@@ -546,5 +547,70 @@ impl TryFrom<Json> for PresentationDefinitionUri {
 impl From<PresentationDefinitionUri> for Json {
     fn from(value: PresentationDefinitionUri) -> Self {
         value.0.to_string().into()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scope(pub String);
+
+impl TypedParameter for Scope {
+    const KEY: &'static str = "scope";
+}
+
+impl TryFrom<Json> for Scope {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        anyhow::Ok(Self(serde_json::from_value(value)?))
+    }
+}
+
+impl From<Scope> for Json {
+    fn from(value: Scope) -> Self {
+        Json::String(value.0)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(into = "String", from = "String")]
+pub enum IdTokenType {
+    SubjectSigned,
+    Unsupported(String),
+}
+
+impl From<IdTokenType> for String {
+    fn from(idt: IdTokenType) -> Self {
+        match idt {
+            IdTokenType::SubjectSigned => SUBJECT_SIGNED_ID_TOKEN_TYPE.into(),
+            IdTokenType::Unsupported(s) => s,
+        }
+    }
+}
+
+impl From<String> for IdTokenType {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            SUBJECT_SIGNED_ID_TOKEN_TYPE => IdTokenType::SubjectSigned,
+            _ => IdTokenType::Unsupported(s),
+        }
+    }
+}
+
+impl TypedParameter for IdTokenType {
+    const KEY: &'static str = "id_token_type";
+}
+
+impl TryFrom<Json> for IdTokenType {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        let s: String = serde_json::from_value(value)?;
+        Ok(s.into())
+    }
+}
+
+impl From<IdTokenType> for Json {
+    fn from(idt: IdTokenType) -> Self {
+        Json::String(idt.into())
     }
 }

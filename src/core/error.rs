@@ -31,6 +31,14 @@ impl Error {
         })
     }
 
+    pub fn protocol_vp_formats_not_supported(description: &str) -> Error {
+        Error::Protocol(ProtocolError {
+            r#type: ErrorType::VpFormatsNotSupported,
+            description: Some(description.to_owned()),
+            source: None,
+        })
+    }
+
     pub fn protocol_access_denied(description: &str) -> Error {
         Error::Protocol(ProtocolError {
             r#type: ErrorType::AccessDenied,
