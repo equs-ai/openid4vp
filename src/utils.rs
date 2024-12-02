@@ -1,4 +1,7 @@
+use crate::signer::Signer;
 use anyhow::{bail, Error};
+use base64::prelude::BASE64_URL_SAFE_NO_PAD;
+use base64::Engine;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
@@ -68,4 +71,24 @@ where
         serde_json::Value::String(ref json_str) => serde_json::from_str(json_str),
         _ => serde_json::from_value(value.clone()),
     }
+}
+
+pub async fn generate_jwt<T, S>(
+    header: serde_json::Value,
+    body: &T,
+    signer: &S,
+) -> anyhow::Result<String>
+where
+    S: Signer + ?Sized,
+    T: Serialize,
+{
+    let header_b64: String =
+        serde_json::to_vec(&header).map(|b| BASE64_URL_SAFE_NO_PAD.encode(b))?;
+    let body_b64 = serde_json::to_vec(body).map(|b| BASE64_URL_SAFE_NO_PAD.encode(b))?;
+    let payload = [header_b64.as_bytes(), b".", body_b64.as_bytes()].concat();
+
+    let signature = signer.sign(&payload).await?;
+    let signature_b64 = BASE64_URL_SAFE_NO_PAD.encode(signature);
+
+    Ok(format!("{header_b64}.{body_b64}.{signature_b64}"))
 }

@@ -3,7 +3,7 @@ use std::{fmt::Debug, sync::Arc};
 use anyhow::{anyhow, bail, Context as _, Result};
 use async_trait::async_trait;
 use base64::prelude::*;
-use serde_json::{json, Value as Json};
+use serde_json::json;
 use ssi::did_resolve::DIDResolver;
 use tracing::debug;
 use x509_cert::{
@@ -16,7 +16,8 @@ use crate::core::authorization_request::{
     parameters::{ClientId, ClientIdScheme},
     AuthorizationRequestObject,
 };
-use super::request_signer::RequestSigner;
+use crate::signer::Signer;
+use crate::utils::generate_jwt;
 
 #[async_trait]
 pub trait Client: Debug {
@@ -32,13 +33,13 @@ pub trait Client: Debug {
 
 /// A [Client] with the `did` Client Identifier.
 #[derive(Debug, Clone)]
-pub struct DIDClient<S: RequestSigner> {
+pub struct DIDClient<S: Signer> {
     id: ClientId,
     vm: String,
     signer: S,
 }
 
-impl<S: RequestSigner> DIDClient<S> {
+impl<S: Signer> DIDClient<S> {
     pub async fn new(vm: String, signer: S, resolver: &dyn DIDResolver) -> Result<Self> {
         let (id, _f) = vm.rsplit_once('#').context(format!(
             "expected a DID verification method, received '{vm}'"
@@ -67,14 +68,14 @@ impl<S: RequestSigner> DIDClient<S> {
 pub struct X509SanClient {
     id: ClientId,
     x5c: Vec<Certificate>,
-    signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
+    signer: Arc<dyn Signer<Error = anyhow::Error> + Send + Sync>,
     variant: X509SanVariant,
 }
 
 impl X509SanClient {
     pub fn new(
         x5c: Vec<Certificate>,
-        signer: Arc<dyn RequestSigner<Error = anyhow::Error> + Send + Sync>,
+        signer: Arc<dyn Signer<Error = anyhow::Error> + Send + Sync>,
         variant: X509SanVariant,
     ) -> Result<Self> {
         let leaf = &x5c[0];
@@ -125,7 +126,7 @@ pub enum X509SanVariant {
 }
 
 #[async_trait]
-impl<S: RequestSigner + Sync> Client for DIDClient<S> {
+impl<S: Signer + Sync> Client for DIDClient<S> {
     fn id(&self) -> &ClientId {
         &self.id
     }
@@ -147,7 +148,7 @@ impl<S: RequestSigner + Sync> Client for DIDClient<S> {
             "kid": self.vm,
             "typ": "JWT"
         });
-        make_jwt(header, body, &self.signer).await
+        generate_jwt(header, body, &self.signer).await
     }
 }
 
@@ -183,24 +184,8 @@ impl Client for X509SanClient {
             "x5c": x5c,
             "typ": "JWT"
         });
-        make_jwt(header, body, self.signer.as_ref()).await
+        generate_jwt(header, body, self.signer.as_ref()).await
     }
-}
-
-async fn make_jwt<S: RequestSigner + ?Sized>(
-    header: Json,
-    body: &AuthorizationRequestObject,
-    signer: &S,
-) -> Result<String> {
-    let header_b64: String =
-        serde_json::to_vec(&header).map(|b| BASE64_URL_SAFE_NO_PAD.encode(b))?;
-    let body_b64 = serde_json::to_vec(body).map(|b| BASE64_URL_SAFE_NO_PAD.encode(b))?;
-    let payload = [header_b64.as_bytes(), b".", body_b64.as_bytes()].concat();
-
-    let signature = signer.sign(&payload).await?;
-    let signature_b64 = BASE64_URL_SAFE_NO_PAD.encode(signature);
-
-    Ok(format!("{header_b64}.{body_b64}.{signature_b64}"))
 }
 
 /// A [Client] with the `redirect_uri` Client Identifier.
@@ -224,10 +209,9 @@ impl Client for RedirectUriClient {
         &ClientIdScheme::RedirectUri
     }
 
-    async fn generate_request_object_jwt(
-        &self,
-        _: &AuthorizationRequestObject,
-    ) -> Result<String> {
-        Err(anyhow!("generation of signed jwt is not supported in 'redirect_uri' client identifier"))
+    async fn generate_request_object_jwt(&self, _: &AuthorizationRequestObject) -> Result<String> {
+        Err(anyhow!(
+            "generation of signed jwt is not supported in 'redirect_uri' client identifier"
+        ))
     }
 }

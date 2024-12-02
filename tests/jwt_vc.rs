@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use http::{Request, Response};
+use oid4vp::core::error::Error;
 use oid4vp::{
     core::{
         authorization_request::{
@@ -23,7 +24,6 @@ use oid4vp::{
 use serde_json::json;
 use ssi::dids::{DIDKey, VerificationMethodDIDResolver};
 use ssi::verification_methods::AnyJwkMethod;
-use oid4vp::core::error::Error;
 
 pub async fn wallet_verifier() -> (JwtVcWallet, Arc<Verifier>) {
     let verifier_did = "did:key:zDnaeaDj3YpPR4JXos2kCCNPS86hdELeN5PZh97KGkoFzUtGn".to_owned();
