@@ -233,7 +233,7 @@ fn validate_response_type(
     authorization_request_object: &AuthorizationRequestObject,
     wallet_metadata: &WalletMetadata,
 ) -> Result<(), Error> {
-    let Ok(response_type) = authorization_request_object
+    let response_type = authorization_request_object
         .get::<ResponseType>()
         .ok_or_else( || Error::protocol_invalid_req("'response_type' is not declared, it is a required parameter of authorization request object"))?
         .context("error occurred when retrieving response type")?;
