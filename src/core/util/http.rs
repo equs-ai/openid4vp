@@ -10,9 +10,17 @@ pub const MIME_TYPE_JSON: &str = "application/json";
 pub const MIME_TYPE_FORM_URLENCODED: &str = "application/x-www-form-urlencoded";
 pub const MIME_TYPE_TEXT_PLAIN: &str = "text/plain";
 
-pub fn create_post_request(url: &Url, body: &Vec<u8>, content_type: &str) -> HttpRequest {
-    let headers = match HeaderValue::from_str(content_type) {
-        Ok(content_type) => vec![(CONTENT_TYPE, content_type)],
+pub fn create_post_request(
+    url: &Url,
+    body: &Vec<u8>,
+    content_type: &str,
+    accept: &str,
+) -> HttpRequest {
+    let headers = match (
+        HeaderValue::from_str(content_type),
+        HeaderValue::from_str(accept),
+    ) {
+        (Ok(content_type), Ok(accept)) => vec![(CONTENT_TYPE, content_type), (ACCEPT, accept)],
         _ => vec![],
     };
 
