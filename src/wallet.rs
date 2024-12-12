@@ -9,7 +9,7 @@ use url::Url;
 use crate::core::authorization_request::parameters::Nonce;
 use crate::core::error::Error;
 use crate::core::response::parameters::IdTokenBody;
-use crate::core::util::http::{create_post_request, MIME_TYPE_FORM_URLENCODED};
+use crate::core::util::http::{create_post_request, MIME_TYPE_FORM_URLENCODED, MIME_TYPE_JSON};
 use crate::core::{
     authorization_request::{
         parameters::ResponseMode, verification::RequestVerifier, AuthorizationRequest,
@@ -65,7 +65,7 @@ pub trait Wallet: RequestVerifier + Sync {
                 };
                 let body = un_encoded.into_x_www_form_urlencoded()?.into_bytes();
 
-                create_post_request(response_uri, &body, MIME_TYPE_FORM_URLENCODED)
+                create_post_request(response_uri, &body, MIME_TYPE_FORM_URLENCODED, MIME_TYPE_JSON)
             }
             ResponseMode::DirectPostJwt => {
                 let AuthorizationResponse::Jwt(jwt) = response else {
@@ -75,7 +75,7 @@ pub trait Wallet: RequestVerifier + Sync {
                 };
                 let body = jwt.into_x_www_form_urlencoded()?.into_bytes();
 
-                create_post_request(response_uri, &body, MIME_TYPE_FORM_URLENCODED)
+                create_post_request(response_uri, &body, MIME_TYPE_FORM_URLENCODED, MIME_TYPE_JSON)
             }
             ResponseMode::Fragment | ResponseMode::FragmentJwt => {
                 let AuthorizationResponse::Unencoded(un_encoded) = response else {
