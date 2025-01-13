@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, Context as _, Result};
 use async_trait::async_trait;
 use base64::prelude::*;
 use serde_json::json;
-use ssi::did_resolve::DIDResolver;
+use ssi::jwk::JWKResolver;
 use tracing::debug;
 use x509_cert::{
     der::Encode,
@@ -40,16 +40,17 @@ pub struct DIDClient<S: Signer> {
 }
 
 impl<S: Signer> DIDClient<S> {
-    pub async fn new(vm: String, signer: S, resolver: &dyn DIDResolver) -> Result<Self> {
+    pub async fn new(vm: String, signer: S, resolver: impl JWKResolver) -> Result<Self> {
         let (id, _f) = vm.rsplit_once('#').context(format!(
             "expected a DID verification method, received '{vm}'"
         ))?;
 
-        let key = ssi::did_resolve::resolve_key(&vm, resolver)
+        let jwk = resolver
+            .fetch_public_jwk(Some(&vm))
             .await
             .context("unable to resolve key from verification method")?;
 
-        if !signer.jwk().map(|jwk| key == jwk).unwrap_or(true) {
+        if *jwk != signer.jwk().context("signer did not have a JWK")? {
             bail!(
                 "verification method resolved from DID document did not match public key of signer"
             )

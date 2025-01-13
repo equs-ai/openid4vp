@@ -7,7 +7,8 @@ use crate::core::{
 use anyhow::{Context, Result};
 use base64::prelude::*;
 use serde_json::{Map, Value as Json};
-use ssi::did_resolve::{resolve_key, DIDResolver};
+
+use ssi::jwk::JWKResolver;
 
 /// Default implementation of request validation for `client_id_scheme` `did`.
 pub async fn verify_with_resolver(
@@ -15,10 +16,10 @@ pub async fn verify_with_resolver(
     request_object: &AuthorizationRequestObject,
     request_jwt: String,
     trusted_dids: Option<&[String]>,
-    resolver: &dyn DIDResolver,
+    resolver: impl JWKResolver,
 ) -> Result<(), Error> {
     let (headers_b64, _, _) =
-        ssi::jws::split_jws(&request_jwt).map_err(|e| Error::internal(e.into()))?;
+        ssi::claims::jws::split_jws(&request_jwt).map_err(|e| Error::internal(e.into()))?;
 
     let headers_json_bytes = BASE64_URL_SAFE_NO_PAD.decode(headers_b64).map_err(|e| {
         Error::protocol_access_denied("jwt headers were not valid base64url").add_source(e.into())
@@ -78,12 +79,12 @@ pub async fn verify_with_resolver(
         }
     }
 
-    let jwk = resolve_key(&kid, resolver).await.map_err(|e| {
+    let jwk = resolver.fetch_public_jwk(Some(&kid)).await.map_err(|e| {
         Error::protocol_access_denied("unable to resolve verification method from 'kid' header")
             .add_source(e.into())
     })?;
 
-    let _: Json = ssi::jwt::decode_verify(&request_jwt, &jwk).map_err(|e| {
+    let _: Json = ssi::claims::jwt::decode_verify(&request_jwt, &jwk).map_err(|e| {
         Error::protocol_access_denied("request signature could not be verified")
             .add_source(e.into())
     })?;

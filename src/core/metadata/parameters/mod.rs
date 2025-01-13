@@ -12,7 +12,10 @@ pub struct SubjectSyntaxTypesSupported(pub Vec<String>);
 
 impl Default for SubjectSyntaxTypesSupported {
     fn default() -> Self {
-        Self(vec!["urn:ietf:params:oauth:jwk-thumbprint".to_string(), "did:key".to_string()])
+        Self(vec![
+            "urn:ietf:params:oauth:jwk-thumbprint".to_string(),
+            "did:key".to_string(),
+        ])
     }
 }
 

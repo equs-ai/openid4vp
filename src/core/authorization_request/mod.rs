@@ -1,8 +1,7 @@
-use std::future::Future;
 use std::ops::{Deref, DerefMut};
 
 use anyhow::anyhow;
-use oauth2::{HttpRequest, HttpResponse};
+use http::Response;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use url::Url;
@@ -20,7 +19,9 @@ use crate::core::error::Error;
 use crate::core::error::ErrorType::{
     InvalidPresentationDefinitionReference, InvalidPresentationDefinitionUri,
 };
-use crate::core::util::http::{create_get_request, MIME_TYPE_JSON, MIME_TYPE_TEXT_PLAIN};
+use crate::core::util::http::{
+    create_get_request, AsyncHttpClient, MIME_TYPE_JSON, MIME_TYPE_TEXT_PLAIN,
+};
 
 pub mod parameters;
 pub mod verification;
@@ -85,25 +86,16 @@ impl AuthorizationRequest {
     /// [RequestObject].
     ///
     /// Custom wallet metadata can be provided, otherwise the default metadata for this profile is used.
-    pub async fn validate<W, HC, F, RE>(
-        self,
-        wallet: &W,
-        http_client_fn: HC,
-    ) -> Result<AuthorizationRequestObject, Error>
+    pub async fn validate<W>(self, wallet: &W) -> Result<AuthorizationRequestObject, Error>
     where
         W: Wallet + ?Sized,
-        HC: Fn(HttpRequest) -> F + Send,
-        F: Future<Output = Result<HttpResponse, RE>> + Send,
-        RE: std::error::Error + 'static + Send + Sync,
     {
         let aro = match self {
             AuthorizationRequest::Plain(aro) => {
                 let fetched_auth_req = FetchedAuthorizationRequest::Plain(aro);
-                verify_request(wallet, fetched_auth_req, http_client_fn).await?
+                verify_request(wallet, fetched_auth_req).await?
             }
-            AuthorizationRequest::Signed(signed) => {
-                signed.resolve_auth_request(wallet, http_client_fn).await?
-            }
+            AuthorizationRequest::Signed(signed) => signed.resolve_auth_request(wallet).await?,
         };
 
         Ok(aro)
@@ -111,8 +103,8 @@ impl AuthorizationRequest {
 
     /// Parse from [Url], validating the authorization_endpoint.
     /// ```
-    /// # use oid4vp::core::authorization_request::AuthorizationRequest;
-    /// # use oid4vp::core::authorization_request::RequestIndirection;
+    /// # use openid4vp::core::authorization_request::AuthorizationRequest;
+    /// # use openid4vp::core::authorization_request::RequestIndirection;
     /// # use url::Url;
     /// let url: Url = "example://?client_id=xyz&request=test".parse().unwrap();
     /// let authorization_endpoint: Url = "example://".parse().unwrap();
@@ -160,8 +152,8 @@ impl AuthorizationRequest {
 
     /// Parse from urlencoded query parameters.
     /// ```
-    /// # use oid4vp::core::authorization_request::AuthorizationRequest;
-    /// # use oid4vp::core::authorization_request::RequestIndirection;
+    /// # use openid4vp::core::authorization_request::AuthorizationRequest;
+    /// # use openid4vp::core::authorization_request::RequestIndirection;
     /// let query = "client_id=xyz&request=test";
     ///
     /// let AuthorizationRequest::Signed(authorization_request) = AuthorizationRequest::from_query_params(query).unwrap()
@@ -212,33 +204,32 @@ impl AuthorizationRequestObject {
         &self.2
     }
 
-    pub async fn resolve_presentation_definition<HC, F, RE>(
+    pub async fn resolve_presentation_definition<HC>(
         &self,
-        http_client_fn: HC,
+        http_client: &HC,
     ) -> Result<PresentationDefinition, Error>
     where
-        HC: FnOnce(HttpRequest) -> F,
-        F: Future<Output = Result<HttpResponse, RE>>,
-        RE: std::error::Error + 'static + Sync + Send,
+        HC: AsyncHttpClient + Send + Sync,
     {
         match &self.5 {
             PresentationDefinitionIndirection::ByValue(by_value) => Ok(by_value.clone()),
             PresentationDefinitionIndirection::ByReference(by_reference) => {
-                let resp = http_client_fn(create_get_request(&by_reference, MIME_TYPE_JSON))
+                let resp = http_client
+                    .execute(create_get_request(&by_reference, MIME_TYPE_JSON)?)
                     .await
                     .map_err(|e| Error::Internal(anyhow!(e)))?;
 
-                if !resp.status_code.is_success() {
+                if !resp.status().is_success() {
                     return Err(Error::protocol(
                         InvalidPresentationDefinitionUri,
                         &format!(
                             "failed to get Presentation Definition: status_code={}",
-                            resp.status_code,
+                            resp.status().as_u16(),
                         ),
                     ));
                 }
 
-                let presentation_def = serde_json::from_slice::<Json>(&resp.body)
+                let presentation_def = serde_json::from_slice::<Json>(resp.body())
                     .map_err(|e| Error::internal(e.into()))?;
                 PresentationDefinition::try_from(presentation_def).map_err(|e| {
                     Error::protocol(
@@ -421,21 +412,20 @@ impl DerefMut for AuthorizationRequestObject {
 
 impl SignedAuthorizationRequest {
     /// Try to resolve `response_uri`.
-    pub async fn resolve_response_uri<HC, F, RE>(&self, http_client_fn: HC) -> Result<Url, Error>
+    pub async fn resolve_response_uri<HC>(&self, http_client: &HC) -> Result<Url, Error>
     where
-        HC: Fn(HttpRequest) -> F + Send,
-        F: Future<Output = Result<HttpResponse, RE>> + Send,
-        RE: std::error::Error + 'static + Send + Sync,
+        HC: AsyncHttpClient + Send + Sync,
     {
-        let jwt = self.retrieve_unverified_jwt(http_client_fn).await?;
+        let jwt = self.retrieve_unverified_jwt(http_client).await?;
 
-        let aro: AuthorizationRequestObject = ssi::jwt::decode_unverified::<UntypedObject>(&jwt)
-            .map_err(|e| {
-                Error::internal(anyhow!(
-                    "unable to decode Authorization Request Object JWT: {e}"
-                ))
-            })?
-            .try_into()?;
+        let aro: AuthorizationRequestObject =
+            ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
+                .map_err(|e| {
+                    Error::internal(anyhow!(
+                        "unable to decode Authorization Request Object JWT: {e}"
+                    ))
+                })?
+                .try_into()?;
 
         Ok(aro.return_uri().to_owned())
     }
@@ -447,16 +437,15 @@ impl SignedAuthorizationRequest {
         Ok(authorization_endpoint)
     }
 
-    async fn retrieve_unverified_jwt<HC, F, RE>(&self, http_client_fn: HC) -> Result<String, Error>
+    async fn retrieve_unverified_jwt<HC>(&self, http_client: &HC) -> Result<String, Error>
     where
-        HC: Fn(HttpRequest) -> F + Send,
-        F: Future<Output = Result<HttpResponse, RE>> + Send,
-        RE: std::error::Error + 'static + Send + Sync,
+        HC: AsyncHttpClient + Send + Sync,
     {
         let unverified_jwt = match &self.request_indirection {
             RequestIndirection::ByValue(jwt) => jwt.to_owned(),
             RequestIndirection::ByReference(url) => {
-                let resp = http_client_fn(create_get_request(&url, MIME_TYPE_TEXT_PLAIN))
+                let resp = http_client
+                    .execute(create_get_request(&url, MIME_TYPE_TEXT_PLAIN)?)
                     .await
                     .map_err(|e| Error::Internal(anyhow!(e)))?;
 
@@ -467,21 +456,16 @@ impl SignedAuthorizationRequest {
         Ok(unverified_jwt)
     }
 
-    async fn resolve_auth_request<W, HC, F, RE>(
-        &self,
-        wallet: &W,
-        http_client_fn: HC,
-    ) -> Result<AuthorizationRequestObject, Error>
+    async fn resolve_auth_request<W>(&self, wallet: &W) -> Result<AuthorizationRequestObject, Error>
     where
         W: Wallet + ?Sized,
-        HC: Fn(HttpRequest) -> F + Send,
-        F: Future<Output = Result<HttpResponse, RE>> + Send,
-        RE: std::error::Error + 'static + Send + Sync,
     {
         let unverified_jwt = match &self.request_indirection {
             RequestIndirection::ByValue(jwt) => jwt.to_owned(),
             RequestIndirection::ByReference(url) => {
-                let resp = http_client_fn(create_get_request(&url, MIME_TYPE_TEXT_PLAIN))
+                let resp = wallet
+                    .http_client()
+                    .execute(create_get_request(&url, MIME_TYPE_TEXT_PLAIN)?)
                     .await
                     .map_err(|e| Error::Internal(anyhow!(e)))?;
 
@@ -490,7 +474,7 @@ impl SignedAuthorizationRequest {
         };
         let fetched_auth_req = FetchedAuthorizationRequest::UnverifiedJwt(unverified_jwt);
 
-        let aro = verify_request(wallet, fetched_auth_req, http_client_fn).await?;
+        let aro = verify_request(wallet, fetched_auth_req).await?;
         if self.client_id.as_str() != aro.client_id().0.as_str() {
             return Err(Error::protocol_invalid_req(&format!(
                 "Authorization Request and Request Object have different client ids: '{}' vs. '{}'",
@@ -502,14 +486,14 @@ impl SignedAuthorizationRequest {
         Ok(aro)
     }
 
-    fn http_resp_to_unverified_jwt(resp: HttpResponse) -> Result<String, Error> {
-        if !resp.status_code.is_success() {
+    fn http_resp_to_unverified_jwt(resp: Response<Vec<u8>>) -> Result<String, Error> {
+        if !resp.status().is_success() {
             return Err(Error::internal(anyhow!(
                 "failed to get authorization request object"
             )));
         }
 
-        let jwt = String::from_utf8(resp.body).map_err(|e| {
+        let jwt = String::from_utf8(resp.body().to_owned()).map_err(|e| {
             Error::internal(anyhow!("cannot parse authorization request object: {e}"))
         })?;
 

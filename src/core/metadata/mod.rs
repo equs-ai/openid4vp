@@ -16,6 +16,7 @@ use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
 use anyhow::{Error, Result};
 use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
 use serde::{Deserialize, Serialize};
+use ssi::jwk::Algorithm;
 
 pub mod parameters;
 
@@ -70,6 +71,45 @@ impl WalletMetadata {
         &mut self.2
     }
 
+    /// Add a request object signing algorithm to the list of the request object
+    /// signing algorithms supported.
+    pub fn add_request_object_signing_alg_values_supported(
+        &mut self,
+        alg: Algorithm,
+    ) -> Result<()> {
+        let mut supported = self
+            .0
+            .get_or_default::<RequestObjectSigningAlgValuesSupported>()?;
+
+        // Insert the algorithm.
+        supported.0.push(alg.to_string());
+
+        // Insert the updated request object signing algorithms supported.
+        self.0.insert(supported);
+
+        Ok(())
+    }
+
+    /// Add a client ID scheme to the list of the client ID schemes supported.
+    ///
+    /// This method will construct a `client_id_schemes_supported` property in the
+    /// wallet metadata if none exists previously, otherwise, this method will append
+    /// the client ID schemes to the existing list of the client ID schemes supported.
+    pub fn add_client_id_schemes_supported(
+        &mut self,
+        client_id_schemes: &[ClientIdScheme],
+    ) -> Result<()> {
+        let mut supported = self.0.get_or_default::<ClientIdSchemesSupported>()?;
+
+        // Insert the scheme.
+        supported.0.extend_from_slice(client_id_schemes);
+
+        // Insert the updated client IDs schemes supported.
+        self.0.insert(supported);
+
+        Ok(())
+    }
+
     /// Return a reference to the supported response types.
     pub fn response_types_supported(&self) -> &ResponseTypesSupported {
         &self.3
@@ -82,7 +122,9 @@ impl WalletMetadata {
 
     /// Check that a client-id-schema is supported.
     pub fn is_client_id_schema_supported(&self, client_id_scheme: &ClientIdScheme) -> bool {
-        self.client_id_schema_supported().0.contains(client_id_scheme)
+        self.client_id_schema_supported()
+            .0
+            .contains(client_id_scheme)
     }
 
     /// Return a reference to the supported response types.
@@ -103,7 +145,7 @@ impl WalletMetadata {
     ///     },
     ///     "jwt_vc_json": {
     ///       "alg_values_supported": ["ES256"]
-    ///     }
+    ///     },
     ///   },
     ///   "request_object_signing_alg_values_supported": [
     ///     "ES256"
