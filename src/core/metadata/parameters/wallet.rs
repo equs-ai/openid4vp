@@ -1,9 +1,10 @@
 use crate::core::{
     authorization_request::parameters::{ClientIdScheme, ResponseType},
-    credential_format::{ClaimFormatDesignation, ClaimFormatMap, ClaimFormatPayload},
+    credential_format::{ClaimFormatDesignation, ClaimFormatMap},
     object::TypedParameter,
 };
 
+use crate::core::credential_format::ClaimFormatPayload;
 use anyhow::{bail, Error, Result};
 use serde_json::Value as Json;
 use url::Url;
@@ -89,12 +90,6 @@ impl From<ResponseTypesSupported> for Json {
 #[derive(Debug, Clone)]
 pub struct ClientIdSchemesSupported(pub Vec<ClientIdScheme>);
 
-impl Default for ClientIdSchemesSupported {
-    fn default() -> Self {
-        Self(vec![ClientIdScheme::PreRegistered])
-    }
-}
-
 impl TypedParameter for ClientIdSchemesSupported {
     const KEY: &'static str = "client_id_schemes_supported";
 }
@@ -116,6 +111,12 @@ impl TryFrom<Json> for ClientIdSchemesSupported {
 impl From<ClientIdSchemesSupported> for Json {
     fn from(value: ClientIdSchemesSupported) -> Json {
         Json::Array(value.0.into_iter().map(Json::from).collect())
+    }
+}
+
+impl Default for ClientIdSchemesSupported {
+    fn default() -> Self {
+        Self(vec![ClientIdScheme::PreRegistered])
     }
 }
 

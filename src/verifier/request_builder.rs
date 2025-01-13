@@ -193,7 +193,8 @@ impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
             .contains(&response_type)
         {
             return Err(Error::internal(anyhow!(
-                "response type = '{}' is not supported by the wallet", String::from(response_type)
+                "response type = '{}' is not supported by the wallet",
+                String::from(response_type)
             )));
         }
 

@@ -155,15 +155,15 @@ fn test_presentation_submission_validation() -> Result<()> {
 
         match test_case {
             1 | 2 => {
-                assert!(definition
-                    .validate_presentation(&presentation, submission.descriptor_map())
+                assert!(submission
+                    .find_and_validate_inputs(&definition, &presentation, &NoClaimsDecoder)
                     .is_ok());
             }
             3 => {
                 // Expect this case to error because the presentation includes more descriptors
                 // than the submission requires.
-                assert!(definition
-                    .validate_presentation(&presentation, submission.descriptor_map())
+                assert!(submission
+                    .find_and_validate_inputs(&definition, &presentation, &NoClaimsDecoder)
                     .is_err());
             }
             _ => {}

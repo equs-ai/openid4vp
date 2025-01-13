@@ -19,8 +19,6 @@ use crate::core::{
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use oauth2::{HttpRequest, HttpResponse};
-use std::future::Future;
 use url::Url;
 
 pub mod did;
@@ -113,16 +111,12 @@ pub trait RequestVerifier {
     }
 }
 
-pub(crate) async fn verify_request<W, HC, F, RE>(
+pub(crate) async fn verify_request<W>(
     wallet: &W,
     fetched_request: FetchedAuthorizationRequest,
-    http_client_fn: HC,
 ) -> Result<AuthorizationRequestObject, Error>
 where
     W: Wallet + ?Sized,
-    HC: Fn(HttpRequest) -> F + Send,
-    F: Future<Output = Result<HttpResponse, RE>> + Send,
-    RE: std::error::Error + 'static + Sync + Send,
 {
     let request = match fetched_request {
         FetchedAuthorizationRequest::Plain(request) => {
@@ -131,7 +125,7 @@ where
         }
         FetchedAuthorizationRequest::UnverifiedJwt(jwt) => {
             let request: AuthorizationRequestObject =
-                ssi::jwt::decode_unverified::<UntypedObject>(&jwt)
+                ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
                     .map_err(|e| {
                         Error::protocol_invalid_req(
                             "unable to decode Authorization Request Object JWT",
@@ -155,21 +149,17 @@ where
         }
     };
 
-    validate_request_against_metadata(wallet, &request, http_client_fn).await?;
+    validate_request_against_metadata(wallet, &request).await?;
 
     Ok(request)
 }
 
-pub(crate) async fn validate_request_against_metadata<W, HC, F, RE>(
+pub(crate) async fn validate_request_against_metadata<W>(
     wallet: &W,
     request: &AuthorizationRequestObject,
-    http_client_fn: HC,
 ) -> Result<(), Error>
 where
     W: Wallet + ?Sized,
-    HC: Fn(HttpRequest) -> F,
-    F: Future<Output = Result<HttpResponse, RE>>,
-    RE: std::error::Error + 'static + Sync + Send,
 {
     let wallet_metadata = wallet.metadata();
 
@@ -187,7 +177,7 @@ where
 
     validate_response_type(request, wallet_metadata)?;
 
-    let client_metadata = ClientMetadata::resolve(request, http_client_fn).await?;
+    let client_metadata = ClientMetadata::resolve(request, wallet.http_client()).await?;
     validate_vp_formats(&client_metadata, wallet_metadata)?;
 
     let response_mode = request.get::<ResponseMode>().parsing_error()?;
@@ -250,7 +240,6 @@ fn validate_response_type(
     }
 
     if ResponseType::VpTokenIdToken == response_type {
-        println!("authorization_request_object\n{:?}", authorization_request_object);
         let subject_syntax_types_supported = authorization_request_object
             .get::<ClientMetadata>()
             .ok_or_else( || Error::protocol_invalid_req("'client_metadata' is required when response type is 'vp_token id_token'"))?
@@ -280,7 +269,7 @@ fn validate_vp_formats(
     wallet_metadata: &WalletMetadata,
 ) -> Result<(), Error> {
     let Ok(vp_formats) = metadata.0.get::<VpFormatsSupported>().parsing_error() else {
-        return Ok(())
+        return Ok(());
     };
 
     for (format, alg) in vp_formats.0 {

@@ -1,23 +1,19 @@
-use super::presentation_submission::*;
+use super::credential_format::*;
 use crate::utils::NonEmptyVec;
 
-use anyhow::{bail, Context, Result};
-use jsonschema::{JSONSchema, ValidationError};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use std::collections::HashSet;
+use std::sync::Arc;
 
-pub use super::credential_format::ClaimFormat;
-pub use super::credential_format::ClaimFormatMap;
+use anyhow::Result;
+use jsonschema::ValidationError;
+use serde::{Deserialize, Serialize};
+use serde_json_path::JsonPath;
+use uuid::Uuid;
 
 /// A GroupId represents a unique identifier for a group of Input Descriptors.
 ///
 /// This type is also used by the submission requirements to group input descriptors.
 pub type GroupId = String;
-
-/// A JSONPath is a string that represents a path to a specific value within a JSON object.
-///
-/// For syntax details, see [https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition)
-pub type JsonPath = String;
 
 /// The predicate Feature introduces properties enabling Verifier to request that Holder apply a predicate and return the result.
 ///
@@ -50,17 +46,22 @@ pub enum Predicate {
 /// See: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InputDescriptor {
-    id: String,
+    pub id: String,
+
     #[serde(default)]
-    constraints: Constraints,
+    pub constraints: Constraints,
+
     #[serde(skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
+    pub name: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
-    purpose: Option<String>,
+    pub purpose: Option<String>,
+
     #[serde(default, skip_serializing_if = "ClaimFormatMap::is_empty")]
-    format: ClaimFormatMap,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    group: Vec<GroupId>,
+    pub format: ClaimFormatMap,
+
+    #[serde(rename = "group", default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<GroupId>,
 }
 
 impl InputDescriptor {
@@ -82,31 +83,16 @@ impl InputDescriptor {
         }
     }
 
-    /// Return the id of the input descriptor.
-    pub fn id(&self) -> &str {
-        self.id.as_str()
-    }
-
     /// Set constraints of the input descriptor.
     pub fn set_constraints(mut self, constraints: Constraints) -> Self {
         self.constraints = constraints;
         self
     }
 
-    /// Return the constraints of the input descriptor.
-    pub fn constraints(&self) -> &Constraints {
-        &self.constraints
-    }
-
     /// Set the name of the input descriptor.
     pub fn set_name(mut self, name: String) -> Self {
         self.name = Some(name);
         self
-    }
-
-    /// Return the name of the input descriptor.
-    pub fn name(&self) -> Option<&String> {
-        self.name.as_ref()
     }
 
     /// Set the purpose of the input descriptor.
@@ -119,15 +105,6 @@ impl InputDescriptor {
     pub fn set_purpose(mut self, purpose: String) -> Self {
         self.purpose = Some(purpose);
         self
-    }
-
-    /// Return the purpose of the input descriptor.
-    ///
-    /// If present, the purpose MUST be a string that describes the purpose for which the
-    /// [Claim](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:claim)'s
-    /// data is being requested.
-    pub fn purpose(&self) -> Option<&String> {
-        self.purpose.as_ref()
     }
 
     /// Set the format of the input descriptor.
@@ -143,132 +120,68 @@ impl InputDescriptor {
         self
     }
 
-    /// Set the group of the constraints field.
-    pub fn set_group(mut self, group: Vec<GroupId>) -> Self {
-        self.group = group;
-        self
+    /// Return the format designations of the input descriptor as a hash set.
+    pub fn format_designations(&self) -> HashSet<&ClaimFormatDesignation> {
+        self.format.keys().collect()
     }
 
-    /// Return the group of the constraints field.
-    pub fn groups(&self) -> &Vec<GroupId> {
-        self.group.as_ref()
+    /// Returns the requested fields of a given JSON-encoded credential
+    /// that match the constraint fields of the input descriptors of the
+    /// presentation definition.
+    pub fn requested_fields<'a>(&self, value: &'a serde_json::Value) -> Vec<RequestedField<'a>> {
+        self.constraints
+            .fields
+            .iter()
+            .map(|field| field.requested_fields(self.id.clone(), value))
+            .collect()
     }
 
-    /// Return a mutable reference to the group of the constraints field.
-    pub fn add_to_group(mut self, member: GroupId) -> Self {
-        self.group.push(member);
+    /// Return the credential types of the input descriptor, if any.
+    pub fn credential_types_hint(&self) -> Vec<CredentialType> {
+        self.constraints
+            .fields()
+            .iter()
+            .flat_map(|field| field.credential_types_hint())
+            .collect()
+    }
+}
 
-        self
+/// A parsed object containing the credential type(s) and their
+/// respective requested fields, parsed from the input descriptor contraints fields.
+///
+/// NOTE: This object is not part of the OID4VP specification, but is used to simplify the
+/// extraction of the requested fields and credential types from the input descriptor.
+///
+/// If the credential types hint is non-empty, then the holder MUST select from the list of
+/// credentials that satisfies the requested fields. Otherwise, if the list is empty, the holder
+/// may choose to select any credential that satisfies the requested fields.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CredentialTypesRequestedFields {
+    input_descriptor_id: String,
+    credential_type_hint: Vec<CredentialType>,
+    requested_fields: Vec<String>,
+}
+
+impl CredentialTypesRequestedFields {
+    /// Return the input descriptor ID.
+    pub fn input_descriptor_id(&self) -> &str {
+        &self.input_descriptor_id
     }
 
-    /// Validate the input descriptor against the verifiable presentation and the descriptor map.
-    pub fn validate_verifiable_presentation(
-        &self,
-        verifiable_presentation: &Value,
-        descriptor_map: &DescriptorMap,
-    ) -> Result<()> {
-        // The descriptor map must match the input descriptor.
-        if descriptor_map.id() != self.id() {
-            bail!("Input Descriptor ID does not match the Descriptor Map ID.")
-        }
-
-        if let Some(ConstraintsLimitDisclosure::Required) = self.constraints.limit_disclosure {
-            if self.constraints.fields().is_empty() {
-                bail!("Required limit disclosure must have fields.")
-            }
-        };
-
-        for constraint_field in self.constraints.fields.iter() {
-            // Check if the filter exists if the predicate is present
-            // and set to required.
-            if let Some(Predicate::Required) = constraint_field.predicate() {
-                if constraint_field.filter().is_none() {
-                    bail!("Required predicate must have a filter.")
-                }
-            }
-
-            let mut selector = jsonpath_lib::selector(&verifiable_presentation);
-
-            // The root element is relative to the descriptor map path returned.
-            let Ok(root_element) = selector(descriptor_map.path()) else {
-                bail!("Failed to select root element from verifiable presentation.")
-            };
-
-            let root_element = root_element
-                .first()
-                .ok_or(anyhow::anyhow!("Root element not found."))?;
-
-            let mut map_selector = jsonpath_lib::selector(root_element);
-
-            let validator = constraint_field.validator();
-
-            let mut found_elements = false;
-
-            for field_path in constraint_field.path.iter() {
-                let field_elements = map_selector(field_path)
-                    .context("Failed to select field elements from verifiable presentation.")?;
-
-                // Check if the field matches are empty.
-                if field_elements.is_empty() {
-                    // According the specification, found here:
-                    // [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation)
-                    // > If the result returned no JSONPath match, skip to the next path array element.
-                    continue;
-                }
-
-                found_elements = true;
-
-                // If a filter is available with a valid schema, handle the field validation.
-                if let Some(Ok(schema_validator)) = validator.as_ref() {
-                    let validated_fields = field_elements.iter().find(|element| {
-                        match schema_validator.validate(element) {
-                            Err(errors) => {
-                                for error in errors {
-                                    tracing::debug!(
-                                        "Field did not pass filter validation: {error}",
-                                    );
-                                }
-                                false
-                            }
-                            Ok(_) => true,
-                        }
-                    });
-
-                    if validated_fields.is_none() {
-                        if let Some(Predicate::Required) = constraint_field.predicate() {
-                            bail!("Field did not pass filter validation, required by predicate.");
-                        } else if constraint_field.is_required() {
-                            bail!("Field did not pass filter validation, and is not an optional field.");
-                        }
-                    }
-                }
-            }
-
-            // If no elements are found, and limit disclosure is required, return an error.
-            if !found_elements {
-                if let Some(ConstraintsLimitDisclosure::Required) =
-                    self.constraints.limit_disclosure
-                {
-                    bail!("Field elements are empty while limit disclosure is required.")
-                } else if constraint_field.is_required() {
-                    bail!("Field elements are not found while it is required.")
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Return the format of the input descriptor.
+    /// Return the credential type hint(s).
     ///
-    /// The Input Descriptor Object MAY contain a format property. If present,
-    /// its value MUST be an object with one or more properties matching the registered
-    /// Claim Format Designations (e.g., jwt, jwt_vc, jwt_vp, etc.).
+    /// NOTE: If credential types hint is non-empty, then the holder MUST
+    /// select from the list of credentials that satisfies the requested fields.
     ///
-    /// This format property is identical in value signature to the top-level format object,
-    /// but can be used to specifically constrain submission of a single input to a subset of formats or algorithms.
-    pub fn format(&self) -> &ClaimFormatMap {
-        &self.format
+    /// Otherwise, if the list is empty, the holder may choose to select any
+    /// credential that satisfies the requested fields.
+    pub fn credential_type_hint(&self) -> &[CredentialType] {
+        &self.credential_type_hint
+    }
+
+    /// Return the requested fields.
+    pub fn requested_fields(&self) -> &[String] {
+        &self.requested_fields
     }
 }
 
@@ -302,9 +215,8 @@ impl Constraints {
         self.fields.as_ref()
     }
 
-    /// Returns the fields of the constraints object as mutable.
-
-    pub fn fields_as_mut(&mut self) -> &mut Vec<ConstraintsField> {
+    /// Returns the fields of the constraints object as a mutable reference.
+    pub fn fields_mut(&mut self) -> &mut Vec<ConstraintsField> {
         self.fields.as_mut()
     }
 
@@ -334,6 +246,90 @@ impl Constraints {
     pub fn is_required(&self) -> bool {
         self.fields.iter().any(|field| field.is_required())
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    pub fn matches(&self, value: &serde_json::Value) -> bool {
+        for field in &self.fields {
+            if field.query(value).is_none() && field.is_required() {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+/// Pre-compiled JSON-Schema.
+///
+/// Stores both the raw JSON representation and compiled validator of a JSON
+/// Schema. The schema is compiled on the fly upon deserialization.
+#[derive(Debug, Clone)]
+pub struct CompiledJsonSchema {
+    raw: serde_json::Value,
+    compiled: Arc<jsonschema::JSONSchema>,
+}
+
+impl CompiledJsonSchema {
+    pub fn validator(&self) -> &Arc<jsonschema::JSONSchema> {
+        &self.compiled
+    }
+}
+
+impl AsRef<serde_json::Value> for CompiledJsonSchema {
+    fn as_ref(&self) -> &serde_json::Value {
+        &self.raw
+    }
+}
+
+impl<'a> TryFrom<&'a serde_json::Value> for CompiledJsonSchema {
+    type Error = ValidationError<'a>;
+
+    fn try_from(value: &'a serde_json::Value) -> Result<Self, Self::Error> {
+        let compiled = jsonschema::JSONSchema::compile(value)?;
+        Ok(Self {
+            raw: value.to_owned(),
+            compiled: Arc::new(compiled),
+        })
+    }
+}
+
+// NOTE: implementing PartialEq directly due to JSONSchema not implementing PartialEq.
+impl PartialEq for CompiledJsonSchema {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
+    }
+}
+
+impl Eq for CompiledJsonSchema {}
+
+impl Serialize for CompiledJsonSchema {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.raw.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for CompiledJsonSchema {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+        D::Error: std::error::Error,
+    {
+        let raw = serde_json::Value::deserialize(deserializer)?;
+
+        let compiled = jsonschema::JSONSchema::compile(&raw)
+            .map(Arc::new)
+            .map_err(|e| {
+                serde::de::Error::custom(format!("Failed to compile JSON schema: {}", e))
+            })?;
+
+        Ok(CompiledJsonSchema { raw, compiled })
+    }
 }
 
 /// ConstraintsField objects are used to describe the constraints that a
@@ -343,21 +339,38 @@ impl Constraints {
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConstraintsField {
-    path: NonEmptyVec<JsonPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<String>,
+    pub id: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
-    purpose: Option<String>,
+    pub name: Option<String>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
-    // Optional predicate value
-    predicate: Option<Predicate>,
+    pub purpose: Option<String>,
+
+    pub path: NonEmptyVec<JsonPath>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
-    filter: Option<serde_json::Value>,
+    pub optional: Option<bool>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
-    optional: Option<bool>,
+    pub filter: Option<CompiledJsonSchema>,
+
+    /// Predicate.
+    ///
+    /// Defined by the [Predicate feature][1] of Presentation Exchange 2.0.
+    ///
+    /// [1]: <https://identity.foundation/presentation-exchange/spec/v2.0.0/#predicate-feature>
+    pub predicate: Option<Predicate>,
+
+    /// Indicates if the Verifier intends to retain the Claim's data being
+    /// requested.
+    ///
+    /// Defined by the [Retention Feature][1] of Presentation Exchange 2.0.
+    ///
+    /// [1]: <https://identity.foundation/presentation-exchange/spec/v2.0.0/#retention-feature>
     #[serde(default)]
-    intent_to_retain: bool,
+    pub intent_to_retain: bool,
 }
 
 pub type ConstraintsFields = Vec<ConstraintsField>;
@@ -397,15 +410,6 @@ impl ConstraintsField {
         self
     }
 
-    /// Return the paths of the constraints field.
-    ///
-    /// `path` is a non empty list of [JsonPath](https://goessner.net/articles/JsonPath/) expressions.
-    ///
-    /// For syntax definition, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition](https://identity.foundation/presentation-exchange/spec/v2.0.0/#jsonpath-syntax-definition)
-    pub fn path(&self) -> &NonEmptyVec<JsonPath> {
-        &self.path
-    }
-
     /// Set the id of the constraints field.
     ///
     /// The fields object MAY contain an id property. If present, its value MUST be a string that
@@ -416,22 +420,12 @@ impl ConstraintsField {
         self
     }
 
-    /// Return the id of the constraints field.
-    pub fn id(&self) -> Option<&String> {
-        self.id.as_ref()
-    }
-
     /// Set the purpose of the constraints field.
     ///
     /// If present, its value MUST be a string that describes the purpose for which the field is being requested.
     pub fn set_purpose(mut self, purpose: String) -> Self {
         self.purpose = Some(purpose);
         self
-    }
-
-    /// Return the purpose of the constraints field.
-    pub fn purpose(&self) -> Option<&String> {
-        self.purpose.as_ref()
     }
 
     /// Set the name of the constraints field.
@@ -445,18 +439,18 @@ impl ConstraintsField {
         self
     }
 
-    /// Return the name of the constraints field.
-    pub fn name(&self) -> Option<&String> {
-        self.name.as_ref()
-    }
-
     /// Set the filter of the constraints field.
     ///
     /// If present its value MUST be a JSON Schema descriptor used to filter against
     /// the values returned from evaluation of the JSONPath string expressions in the path array.
-    pub fn set_filter(mut self, filter: serde_json::Value) -> Self {
-        self.filter = Some(filter);
-        self
+    pub fn set_filter(mut self, filter: &serde_json::Value) -> Result<Self, ValidationError> {
+        self.filter = Some(CompiledJsonSchema::try_from(filter)?);
+        Ok(self)
+    }
+
+    /// Return the raw filter of the constraints field.
+    pub fn filter(&self) -> Option<&serde_json::Value> {
+        self.filter.as_ref().map(|f| f.as_ref())
     }
 
     /// Set the predicate of the constraints field.
@@ -469,34 +463,6 @@ impl ConstraintsField {
     pub fn set_predicate(mut self, predicate: Predicate) -> Self {
         self.predicate = Some(predicate);
         self
-    }
-
-    /// Return the predicate of the constraints field.
-    ///
-    /// When using the [Predicate Feature](https://identity.foundation/presentation-exchange/#predicate-feature),
-    /// the fields object **MAY** contain a predicate property. If the predicate property is present,
-    /// the filter property **MUST** also be present.
-    ///
-    /// See: [https://identity.foundation/presentation-exchange/#predicate-feature](https://identity.foundation/presentation-exchange/#predicate-feature)
-    pub fn predicate(&self) -> Option<&Predicate> {
-        self.predicate.as_ref()
-    }
-
-    /// Return the raw filter of the constraints field.
-    pub fn filter(&self) -> Option<&serde_json::Value> {
-        self.filter.as_ref()
-    }
-
-    /// Return a JSON schema validator using the internal filter.
-    ///
-    /// If no filter is provided on the constraint field, this
-    /// will return None.
-    ///
-    /// # Errors
-    ///
-    /// If the filter is invalid, this will return an error.
-    pub fn validator(&self) -> Option<Result<JSONSchema, ValidationError>> {
-        self.filter.as_ref().map(JSONSchema::compile)
     }
 
     /// Set the optional value of the constraints field.
@@ -523,81 +489,152 @@ impl ConstraintsField {
         !self.is_optional()
     }
 
-    /// Set the intent to retain the constraints field.
+    /// Field query.
     ///
-    /// This value indicates the verifier's intent to retain the
-    /// field in the presentation, storing the value in the verifier's system.
-    pub fn set_retained(mut self, intent_to_retain: bool) -> Self {
-        self.intent_to_retain = intent_to_retain;
-        self
+    /// See: <https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-evaluation>
+    pub fn query<'a>(&self, value: &'a serde_json::Value) -> Option<FieldQueryResult<'a>> {
+        for path in &self.path {
+            let candidates = path.query(value);
+            if !candidates.is_empty() {
+                for candidate in candidates {
+                    if let Some(filter) = &self.filter {
+                        if filter.validator().validate(candidate).is_err() {
+                            continue; // next candidate
+                        }
+                    }
+
+                    if let Some(_predicate) = &self.predicate {
+                        return Some(FieldQueryResult::Predicate(true));
+                    }
+
+                    return Some(FieldQueryResult::Value(candidate));
+                }
+            }
+        }
+
+        None
     }
 
-    /// Return the intent to retain the constraints field.
-    pub fn intent_to_retain(&self) -> bool {
-        self.intent_to_retain
-    }
-
-    /// Return the humanly-readable requested fields of the constraints field.
+    /// Returns the requested fields given a JSON-encoded credential
+    /// that is compared against the constraint fields of the input
+    /// descriptor.
     ///
-    /// This will convert camelCase to space-separated words with capitalized first letter.
-    ///
-    /// For example, if the path is `["dateOfBirth"]`, this will return `["Date of Birth"]`.
-    ///
-    /// This will also stripe the periods from the JSON path and return the last word in the path.
-    ///
-    /// e.g., `["$.verifiableCredential.credentialSubject.dateOfBirth"]` will return `["Date of Birth"]`.
-    /// e.g., `["$.verifiableCredential.credentialSubject.familyName"]` will return `["Family Name"]`.
-    ///
-    pub fn requested_fields(&self) -> Vec<String> {
-        self.path()
+    /// This method returns constraint fields of the credential itself, as opposed
+    /// to the what is defined in the presentation definition. This ensures the
+    /// holder of the credential may verify what information is shared versus
+    /// requested.
+    pub fn requested_fields<'a>(
+        &self,
+        input_descriptor_id: String,
+        value: &'a serde_json::Value,
+    ) -> RequestedField<'a> {
+        let raw_fields = self
+            .path
             .iter()
-            // NOTE: It may not be a given that the last path is the field name.
-            // TODO: Cannot use the field path as a unique property, it may be associated to different
-            // credential types.
-            // NOTE: Include the namespace for uniqueness of the requested field type.
-            .filter_map(|path| path.split(&['-', '.', ':', '@'][..]).last())
-            .map(|path| {
-                path.chars()
-                    .fold(String::new(), |mut acc, c| {
-                        // Convert camelCase to space-separated words with capitalized first letter.
-                        if c.is_uppercase() {
-                            acc.push(' ');
-                        }
+            .flat_map(|path| path.query(value).all())
+            .collect::<Vec<&'a serde_json::Value>>();
 
-                        // Check if the field is snake_case and convert to
-                        // space-separated words with capitalized first letter.
-                        if c == '_' {
-                            acc.push(' ');
-                            return acc;
-                        }
+        RequestedField {
+            id: uuid::Uuid::new_v4(),
+            name: self.name.clone(),
+            required: self.is_required(),
+            retained: self.intent_to_retain,
+            purpose: self.purpose.clone(),
+            input_descriptor_id,
+            raw_fields,
+        }
+    }
 
-                        acc.push(c);
-                        acc
+    /// Returns the Credential Type(s) found in the constraints field.
+    ///
+    /// Note: This is a `hint` in that it is not guaranteed that the credential type
+    /// can be parsed from the input descriptor.
+    ///
+    /// This will return an empty vector if the credential type cannot be parsed.
+    ///
+    /// Multiple credentials can be returned if the input descriptor contains a pattern
+    /// filter that matches multiple credentials.
+    pub fn credential_types_hint(&self) -> Vec<CredentialType> {
+        let mut parsed_credentials = Vec::new();
+
+        if self
+            .path
+            .as_ref()
+            .iter()
+            // Check if any of the paths contain a reference to type.
+            // NOTE: It may not be guaranteed or normative that a `type` field to the path
+            // for a verifiable credential is present.
+            .any(|path| path.to_string().contains("type"))
+        {
+            // Check the filter field to determine the `const`
+            // value for the credential type, e.g. `iso.org.18013.5.1.mDL`, etc.
+            if let Some(credential) = self.filter.as_ref().and_then(|filter| {
+                filter
+                    .as_ref()
+                    .get("const")
+                    .and_then(serde_json::Value::as_str)
+                    .map(CredentialType::from)
+            }) {
+                parsed_credentials.push(credential);
+            }
+
+            // The `type` field may be an array with a nested `const` value.
+            if let Some(credential) = self.filter.as_ref().and_then(|filter| {
+                filter
+                    .as_ref()
+                    .get("contains")
+                    .and_then(|value| value.get("const"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(CredentialType::from)
+            }) {
+                parsed_credentials.push(credential);
+            }
+
+            // The `type` field may be an array with a nested `enum` value.
+            if let Some(credential) = self.filter.as_ref().and_then(|filter| {
+                filter
+                    .as_ref()
+                    .get("contains")
+                    .and_then(|value| value.get("enum"))
+                    .and_then(serde_json::Value::as_array)
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(serde_json::Value::as_str)
+                            .map(CredentialType::from)
+                            .collect::<Vec<String>>()
                     })
-                    // Split the path based on empty spaces and uppercase the first letter of each word.
-                    .split(' ')
-                    .fold(String::new(), |desc, word| {
-                        let word =
-                            word.chars()
-                                .enumerate()
-                                .fold(String::new(), |mut acc, (i, c)| {
-                                    // Capitalize the first letter of the word.
-                                    if i == 0 {
-                                        if let Some(c) = c.to_uppercase().next() {
-                                            acc.push(c);
-                                            return acc;
-                                        }
-                                    }
-                                    acc.push(c);
-                                    acc
-                                });
+            }) {
+                parsed_credentials.extend(credential);
+            }
 
-                        format!("{desc} {}", word.trim_end())
+            // Check a pattern for the filter that may include multiple credentials
+            // that may satisfy the constraints.
+            if let Some(credentials) = self.filter.as_ref().and_then(|filter| {
+                filter
+                    .as_ref()
+                    .get("pattern")
+                    .and_then(serde_json::Value::as_str)
+                    .map(|pattern| {
+                        // Remove the start (^) and end ($) anchors
+                        let trimmed = pattern.trim_start_matches('^').trim_end_matches('$');
+
+                        // Remove the outer parentheses
+                        let inner = trimmed.trim_start_matches('(').trim_end_matches(')');
+
+                        // Split by the '|' character
+                        inner
+                            .split('|')
+                            .map(|s| s.to_string())
+                            .collect::<Vec<CredentialType>>()
                     })
-                    .trim_end()
-                    .to_string()
-            })
-            .collect()
+            }) {
+                // Found multiple credentials that may satisfy the constraints.
+                parsed_credentials.extend(credentials);
+            }
+        }
+
+        parsed_credentials
     }
 }
 
@@ -606,4 +643,31 @@ impl ConstraintsField {
 pub enum ConstraintsLimitDisclosure {
     Required,
     Preferred,
+}
+
+pub enum FieldQueryResult<'a> {
+    Predicate(bool),
+    Value(&'a serde_json::Value),
+}
+
+/// The [RequestedField] type is non-normative and is not part of the
+/// core OID4VP specification. However, it is provided as a helper function
+/// for returning requested fields parsed from a given credential that
+/// correspond to the input descriptor constraint fields that are requested.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequestedField<'a> {
+    /// A unique ID for the requested field
+    pub id: Uuid,
+    /// The input descriptor ID the requested field belongs to.
+    pub input_descriptor_id: String,
+    // The name property is optional, since it is also
+    // optional on the constraint field.
+    pub name: Option<String>,
+    pub required: bool,
+    pub retained: bool,
+    pub purpose: Option<String>,
+    // the `raw_field` represents the actual field(s)
+    // being selected by the input descriptor JSON path
+    // selector.
+    pub raw_fields: Vec<&'a serde_json::Value>,
 }
