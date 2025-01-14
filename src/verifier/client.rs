@@ -16,6 +16,7 @@ use crate::core::authorization_request::{
     parameters::{ClientId, ClientIdScheme},
     AuthorizationRequestObject,
 };
+use crate::core::util::http::MIME_TYPE_OAUTH_REQ_JWT;
 use crate::signer::Signer;
 use crate::utils::generate_jwt;
 
@@ -147,7 +148,7 @@ impl<S: Signer + Sync> Client for DIDClient<S> {
         let header = json!({
             "alg": algorithm,
             "kid": self.vm,
-            "typ": "JWT"
+            "typ": MIME_TYPE_OAUTH_REQ_JWT
         });
         generate_jwt(header, body, &self.signer).await
     }
