@@ -2,7 +2,7 @@ use super::{object::UntypedObject, presentation_submission::PresentationSubmissi
 
 use self::parameters::VpToken;
 use crate::core::object::ParsingErrorContext;
-use crate::core::response::parameters::IdToken;
+use crate::core::response::parameters::{IdToken, VpTokenItem};
 use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -93,9 +93,15 @@ impl UnencodedAuthorizationResponse {
 
 impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
     fn from(value: UnencodedAuthorizationResponse) -> Self {
-        let vp_token = serde_json::to_string(&value.vp_token)
+        let mut vp_token = serde_json::to_string(&value.vp_token)
             // SAFTEY: VP Token will always be a valid JSON object.
             .unwrap();
+
+        if value.vp_token.0.len() == 1 {
+            if let VpTokenItem::String(_) = &value.vp_token.0[0] {
+                vp_token = vp_token.trim_matches('"').to_string();
+            }
+        }
         let presentation_submission = serde_json::to_string(&value.presentation_submission)
             // SAFETY: presentation submission will always be a valid JSON object.
             .unwrap();
