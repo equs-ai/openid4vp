@@ -114,7 +114,7 @@ impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
             // SAFETY: presentation submission will always be a valid JSON object.
             .unwrap();
         let id_token = value.id_token.map(|i| i.jwt());
-        let state = value.state.map(|i| i);
+        let state = value.state;
 
         Self {
             vp_token,
