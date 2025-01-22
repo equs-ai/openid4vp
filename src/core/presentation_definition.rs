@@ -397,10 +397,6 @@ pub struct SubmissionRequirementPick {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    use anyhow::Result;
-
     // #[test]
     // fn test_input_descriptor_multi_credential_types_pattern() -> Result<()> {
     //     let definition: PresentationDefinition = serde_json::from_str(include_str!(

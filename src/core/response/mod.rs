@@ -3,6 +3,7 @@ use super::{object::UntypedObject, presentation_submission::PresentationSubmissi
 use self::parameters::VpToken;
 use crate::core::object::ParsingErrorContext;
 use crate::core::response::parameters::IdToken;
+use crate::core::authorization_request::parameters::State;
 use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -37,10 +38,13 @@ impl AuthorizationResponse {
             .context("failed to decode id token")?
             .ok();
 
+        let state = unencoded.state;
+
         Ok(Self::Unencoded(UnencodedAuthorizationResponse {
             vp_token,
             presentation_submission,
             id_token,
+            state
         }))
     }
 }
@@ -54,6 +58,9 @@ struct JsonEncodedAuthorizationResponse {
     /// `id_token` is JSON string encoded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) id_token: Option<String>,
+    /// `state` is JSON string encoded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) state: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -62,6 +69,8 @@ pub struct UnencodedAuthorizationResponse {
     pub presentation_submission: PresentationSubmission,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id_token: Option<IdToken>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
 }
 
 impl UnencodedAuthorizationResponse {
@@ -89,6 +98,11 @@ impl UnencodedAuthorizationResponse {
     pub fn id_token(&self) -> &Option<IdToken> {
         &self.id_token
     }
+
+    /// Return the State.
+    pub fn state(&self) -> &Option<String> {
+        &self.state
+    }
 }
 
 impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
@@ -100,11 +114,13 @@ impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
             // SAFETY: presentation submission will always be a valid JSON object.
             .unwrap();
         let id_token = value.id_token.map(|i| i.jwt());
+        let state = value.state.map(|i| i);
 
         Self {
             vp_token,
             presentation_submission,
             id_token,
+            state
         }
     }
 }
@@ -139,10 +155,17 @@ impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
             .map(|value| value.parsing_error())
             .transpose()?;
 
+        let state = value
+            .get::<State>()
+            .map(|value| value.parsing_error())
+            .transpose()?
+            .map(|state| state.0);
+
         Ok(Self {
             vp_token,
             presentation_submission,
             id_token,
+            state
         })
     }
 }
@@ -175,7 +198,8 @@ mod test {
                     "definition_id": "f619e64a-8f80-4b71-8373-30cf07b1e4f2",
                     "descriptor_map": []
                 },
-                "vp_token": "string"
+                "vp_token": "string",
+                "state": "some_state"
             }
         ))
         .unwrap();
@@ -184,5 +208,6 @@ mod test {
 
         assert!(url_encoded.contains("presentation_submission=%7B%22id%22%3A%22d05a7f51-ac09-43af-8864-e00f0175f2c7%22%2C%22definition_id%22%3A%22f619e64a-8f80-4b71-8373-30cf07b1e4f2%22%2C%22descriptor_map%22%3A%5B%5D%7D"));
         assert!(url_encoded.contains("vp_token=%22string%22"));
+        assert!(url_encoded.contains("state=some_state"));
     }
 }
