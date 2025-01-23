@@ -188,7 +188,7 @@ where
     validate_response_type(request, wallet_metadata)?;
 
     let client_metadata = ClientMetadata::resolve(request, wallet.http_client()).await?;
-    validate_vp_formats(&client_metadata, wallet_metadata)?;
+    validate_vp_formats(&client_metadata, wallet_metadata, &state)?;
 
     let response_mode = request.get::<ResponseMode>().parsing_error()?;
 
@@ -278,6 +278,7 @@ fn validate_response_type(
 fn validate_vp_formats(
     metadata: &ClientMetadata,
     wallet_metadata: &WalletMetadata,
+    state: &Option<String>
 ) -> Result<(), Error> {
     let Ok(vp_formats) = metadata.0.get::<VpFormatsSupported>().parsing_error() else {
         return Ok(());
@@ -293,7 +294,7 @@ fn validate_vp_formats(
                 "unsupported vp format = '{}' with alg values '{}'",
                 String::from(format.to_owned()),
                 serde_json::to_string(&alg).unwrap_or_else(|_| "".to_string())
-            ), &None));
+            ), state));
         }
     }
 
