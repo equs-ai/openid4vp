@@ -11,10 +11,11 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn protocol(error_type: ErrorType, description: &str) -> Error {
+    pub fn protocol(error_type: ErrorType, description: &str, state: Option<String>) -> Error {
         Error::Protocol(ProtocolError {
             r#type: error_type,
             description: Some(description.to_owned()),
+            state,
             source: None,
         })
     }
@@ -23,26 +24,29 @@ impl Error {
         Error::Internal(error)
     }
 
-    pub fn protocol_invalid_req(description: &str) -> Error {
+    pub fn protocol_invalid_req(description: &str, state: Option<String>) -> Error {
         Error::Protocol(ProtocolError {
             r#type: ErrorType::InvalidRequest,
             description: Some(description.to_owned()),
+            state,
             source: None,
         })
     }
 
-    pub fn protocol_vp_formats_not_supported(description: &str) -> Error {
+    pub fn protocol_vp_formats_not_supported(description: &str, state:Option<String>) -> Error {
         Error::Protocol(ProtocolError {
             r#type: ErrorType::VpFormatsNotSupported,
             description: Some(description.to_owned()),
+            state,
             source: None,
         })
     }
 
-    pub fn protocol_access_denied(description: &str) -> Error {
+    pub fn protocol_access_denied(description: &str, state: &Option<String>) -> Error {
         Error::Protocol(ProtocolError {
             r#type: ErrorType::AccessDenied,
             description: Some(description.to_owned()),
+            state: state.to_owned(),
             source: None,
         })
     }
@@ -70,6 +74,8 @@ pub struct ProtocolError {
     #[serde(rename = "error_description")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
     #[serde(skip_serializing)]
     #[serde(skip_deserializing)]
     source: Option<anyhow::Error>,
@@ -126,12 +132,13 @@ impl Display for ErrorType {
 impl Display for ProtocolError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let description = &mut self.description.clone().unwrap_or("".to_owned());
+        let state = &mut self.state.clone().unwrap_or("".to_owned());
 
         if let (Some(source), true) = (&self.source, cfg!(debug_assertions)) {
             description.push_str(&format!(": {source}"));
         }
 
-        write!(f, "{}:{}", self.r#type, description)
+        write!(f, "{}:{}:{}", self.r#type, description, state)
     }
 }
 
