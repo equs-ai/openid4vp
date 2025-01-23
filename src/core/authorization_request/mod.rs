@@ -131,7 +131,7 @@ impl AuthorizationRequest {
             .query()
             .ok_or(Error::protocol_invalid_req(
                 "missing query params in Authorization Request uri",
-                &None
+                None
             ))?
             .to_string();
         let fnd = url.authority();
@@ -139,14 +139,14 @@ impl AuthorizationRequest {
         if fnd != exp {
             return Err(Error::protocol_invalid_req(&format!(
                 "unexpected authorization_endpoint authority, expected '{exp}', received '{fnd}'"
-            ), &None));
+            ), None));
         }
         let fnd = url.path();
         let exp = authorization_endpoint.path();
         if fnd != exp {
             return Err(Error::protocol_invalid_req(&format!(
                 "unexpected authorization_endpoint path, expected '{exp}', received '{fnd}'"
-            ), &None));
+            ), None));
         }
         Self::from_query_params(&query)
     }
@@ -171,7 +171,7 @@ impl AuthorizationRequest {
             serde_urlencoded::from_str(query_params).map_err(|e| {
                 Error::protocol_invalid_req(
                     "unable to parse Authorization Request from query params",
-                    &None
+                    None
                 )
                 .add_source(e.into())
             })?;
@@ -182,7 +182,7 @@ impl AuthorizationRequest {
                 serde_json::from_value(serde_json::Value::Object(query_map)).map_err(|e| {
                     Error::protocol_invalid_req(
                         "unable to parse Signed Authorization Request from query params",
-                        &None
+                        None
                     )
                     .add_source(e.into())
                 })?;
@@ -237,7 +237,7 @@ impl AuthorizationRequestObject {
                             "failed to get Presentation Definition: status_code={}",
                             resp.status().as_u16(),
                         ),
-                        &self.state()
+                        self.state()
                     ));
                 }
 
@@ -247,7 +247,7 @@ impl AuthorizationRequestObject {
                     Error::protocol(
                         InvalidPresentationDefinitionReference,
                         "failed to get parse Presentation Definition: {e}",
-                        &self.state()
+                        self.state()
                     )
                     .add_source(e.into())
                 })
@@ -314,7 +314,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             .map(|s| s.0);
         let client_id = value.get().parsing_error()?;
         let client_id_scheme = value.get().parsing_error().map_err(|e| {
-            Error::protocol_invalid_req("omitting a client_id_scheme is not supported", &state)
+            Error::protocol_invalid_req("omitting a client_id_scheme is not supported", state.clone())
                 .add_source(e.into())
         })?;
 
@@ -329,7 +329,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             (Some(uri), None, mode @ ResponseMode::Fragment | mode @ ResponseMode::FragmentJwt) => (
                 uri.parsing_error()
                     .map_err(|e| {
-                        Error::protocol_invalid_req("could not parse a 'redirect_uri'", &state)
+                        Error::protocol_invalid_req("could not parse a 'redirect_uri'", state.clone())
                             .add_source(e.into())
                     })?
                     .0,
@@ -338,7 +338,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             (None, Some(uri), mode @ ResponseMode::DirectPost | mode @ ResponseMode::DirectPostJwt) => (
                 uri.parsing_error()
                     .map_err(|e| {
-                        Error::protocol_invalid_req("could not parse a 'response_uri'", &state)
+                        Error::protocol_invalid_req("could not parse a 'response_uri'", state.clone())
                             .add_source(e.into())
                     })?
                     .0,
@@ -347,23 +347,23 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             (_, _, ResponseMode::Unsupported(m)) => {
                 return Err(Error::protocol_invalid_req(&format!(
                     "'{m}' response_mode is not supported"
-                ), &state))
+                ), state.clone()))
             }
             (Some(_), Some(_), _) => {
-                return Err(Error::protocol_invalid_req("'response_uri' and 'redirect_uri' are mutually exclusive", &state))
+                return Err(Error::protocol_invalid_req("'response_uri' and 'redirect_uri' are mutually exclusive", state.clone()))
             }
             (_, None, mode @ ResponseMode::DirectPost)
             | (_, None, mode @ ResponseMode::DirectPostJwt) => {
                 return Err(Error::protocol_invalid_req(&format!(
                     "'response_uri' is required for this '{}' response mode",
                     mode
-                ), &state))
+                ), state.clone()))
             }
             (None, _, mode @ ResponseMode::Fragment | mode @ ResponseMode::FragmentJwt) => {
                 return Err(Error::protocol_invalid_req(&format!(
                     "'redirect_uri' is required for this '{}' response mode",
                     mode
-                ), &state))
+                ), state.clone()))
             }
         };
 
@@ -374,21 +374,21 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             value.get::<PresentationDefinitionUri>(),
         ) {
             (None, None) => return Err(Error::protocol_invalid_req(
-                "one of 'presentation_definition' and 'presentation_definition_uri' are required", &state)),
+                "one of 'presentation_definition' and 'presentation_definition_uri' are required", state.clone())),
             (Some(_), Some(_)) => {
                 return Err(Error::protocol_invalid_req(
-                    "'presentation_definition' and 'presentation_definition_uri' are mutually exclusive", &state
+                    "'presentation_definition' and 'presentation_definition_uri' are mutually exclusive", state.clone()
                 ))
             }
             (Some(by_value), None) => {
                 PresentationDefinitionIndirection::ByValue(by_value.parsing_error().map_err(|e| Error::protocol_invalid_req(
-                    "could parse a 'presentation_definition'", &state
+                    "could parse a 'presentation_definition'", state.clone()
                 ).add_source(e.into()))?)
             }
             (None, Some(by_reference)) => {
                 PresentationDefinitionIndirection::ByReference(by_reference.parsing_error().map_err(|e| Error::protocol(
                     InvalidPresentationDefinitionUri,
-                    "could parse a 'presentation_definition_uri'", &state
+                    "could parse a 'presentation_definition_uri'", state.clone()
                 ).add_source(e.into()))?.0)
             }
         };
@@ -495,7 +495,7 @@ impl SignedAuthorizationRequest {
                 "Authorization Request and Request Object have different client ids: '{}' vs. '{}'",
                 self.client_id,
                 aro.client_id().0
-            ), &state));
+            ), state.clone()));
         }
 
         Ok(aro)

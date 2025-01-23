@@ -11,11 +11,11 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn protocol(error_type: ErrorType, description: &str, state: &Option<String>) -> Error {
+    pub fn protocol(error_type: ErrorType, description: &str, state: Option<String>) -> Error {
         Error::Protocol(ProtocolError {
             r#type: error_type,
             description: Some(description.to_owned()),
-            state: state.to_owned(),
+            state,
             source: None,
         })
     }
@@ -24,29 +24,29 @@ impl Error {
         Error::Internal(error)
     }
 
-    pub fn protocol_invalid_req(description: &str, state: &Option<String>) -> Error {
+    pub fn protocol_invalid_req(description: &str, state: Option<String>) -> Error {
         Error::Protocol(ProtocolError {
             r#type: ErrorType::InvalidRequest,
             description: Some(description.to_owned()),
-            state: state.to_owned(),
+            state,
             source: None,
         })
     }
 
-    pub fn protocol_vp_formats_not_supported(description: &str, state: &Option<String>) -> Error {
+    pub fn protocol_vp_formats_not_supported(description: &str, state: Option<String>) -> Error {
         Error::Protocol(ProtocolError {
             r#type: ErrorType::VpFormatsNotSupported,
             description: Some(description.to_owned()),
-            state: state.to_owned(),
+            state,
             source: None,
         })
     }
 
-    pub fn protocol_access_denied(description: &str, state: &Option<String>) -> Error {
+    pub fn protocol_access_denied(description: &str, state: Option<String>) -> Error {
         Error::Protocol(ProtocolError {
             r#type: ErrorType::AccessDenied,
             description: Some(description.to_owned()),
-            state: state.to_owned(),
+            state,
             source: None,
         })
     }
