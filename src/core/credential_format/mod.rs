@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 const FORMAT_JWT: &str = "jwt";
 const FORMAT_JWT_VC: &str = "jwt_vc";
-const FORMAT_SD_JWT_DC: &str = "dc+sd-jwt";
+const FORMAT_SD_JWT_VC: &str = "dc+sd-jwt";
 const FORMAT_JWT_VP: &str = "jwt_vp";
 const FORMAT_JWT_VC_JSON: &str = "jwt_vc_json";
 const FORMAT_JWT_VP_JSON: &str = "jwt_vp_json";
@@ -50,7 +50,7 @@ pub enum ClaimFormat {
         alg: Vec<String>,
     },
     #[serde(rename = "dc+sd-jwt")]
-    SdJwtDc {
+    SdJwtVc {
         /// The algorithm used to sign the SD-JWT verifiable credential.
         #[serde(rename = "sd-jwt_alg_values")]
         jwt_alg_values: Vec<String>,
@@ -117,7 +117,7 @@ impl ClaimFormat {
         match self {
             ClaimFormat::Jwt { .. } => ClaimFormatDesignation::Jwt,
             ClaimFormat::JwtVc { .. } => ClaimFormatDesignation::JwtVc,
-            ClaimFormat::SdJwtDc { .. } => ClaimFormatDesignation::SdJwtDc,
+            ClaimFormat::SdJwtVc { .. } => ClaimFormatDesignation::SdJwtVc,
             ClaimFormat::JwtVcJson { .. } => ClaimFormatDesignation::JwtVcJson,
             ClaimFormat::JwtVp { .. } => ClaimFormatDesignation::JwtVp,
             ClaimFormat::JwtVpJson { .. } => ClaimFormatDesignation::JwtVpJson,
@@ -144,7 +144,7 @@ impl ClaimFormat {
         match self {
             ClaimFormat::Jwt { .. } => "jwt".to_string(),
             ClaimFormat::JwtVc { .. } => "jwt_vc".to_string(),
-            ClaimFormat::SdJwtDc { .. } => "dc+sd-jwt".to_string(),
+            ClaimFormat::SdJwtVc { .. } => "dc+sd-jwt".to_string(),
             ClaimFormat::JwtVp { .. } => "jwt_vp".to_string(),
             ClaimFormat::JwtVcJson { .. } => "jwt_vc_json".to_string(),
             ClaimFormat::JwtVpJson { .. } => "jwt_vp_json".to_string(),
@@ -259,7 +259,7 @@ pub enum ClaimFormatDesignation {
     /// The Disclosures are sent to the Holder as part of the SD-JWT in the format defined in Section 5. [SD-JWT and SD-JWT+KB Data Formats](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-selective-disclosure-jwt-12#name-sd-jwt-and-sd-jwtkb-data-fo)
     /// Expression of supported algorithms in relation to these formats MUST be conveyed using an JWT alg
     /// property paired with values that are identifiers from the JSON Web Algorithms registry
-    SdJwtDc,
+    SdJwtVc,
     /// See [JwtVc](JwtVc) for more information.
     JwtVp,
 
@@ -314,7 +314,7 @@ impl ClaimFormatDesignation {
             FORMAT_JWT_VC => Self::JwtVc,
             FORMAT_JWT_VP => Self::JwtVp,
             FORMAT_JWT_VC_JSON => Self::JwtVcJson,
-            FORMAT_SD_JWT_DC => Self::SdJwtDc,
+            FORMAT_SD_JWT_VC => Self::SdJwtVc,
             FORMAT_JWT_VP_JSON => Self::JwtVpJson,
             FORMAT_LDP => Self::Ldp,
             FORMAT_LDP_VC => Self::LdpVc,
@@ -332,7 +332,7 @@ impl ClaimFormatDesignation {
             Self::JwtVc => FORMAT_JWT_VC,
             Self::JwtVp => FORMAT_JWT_VP,
             Self::JwtVcJson => FORMAT_JWT_VC_JSON,
-            Self::SdJwtDc => FORMAT_SD_JWT_DC,
+            Self::SdJwtVc => FORMAT_SD_JWT_VC,
             Self::JwtVpJson => FORMAT_JWT_VP_JSON,
             Self::Ldp => FORMAT_LDP,
             Self::LdpVc => FORMAT_LDP_VC,
@@ -350,7 +350,7 @@ impl ClaimFormatDesignation {
             Self::JwtVc => Cow::Borrowed(FORMAT_JWT_VC),
             Self::JwtVp => Cow::Borrowed(FORMAT_JWT_VP),
             Self::JwtVcJson => Cow::Borrowed(FORMAT_JWT_VC_JSON),
-            Self::SdJwtDc => Cow::Borrowed(FORMAT_SD_JWT_DC),
+            Self::SdJwtVc => Cow::Borrowed(FORMAT_SD_JWT_VC),
             Self::JwtVpJson => Cow::Borrowed(FORMAT_JWT_VP_JSON),
             Self::Ldp => Cow::Borrowed(FORMAT_LDP),
             Self::LdpVc => Cow::Borrowed(FORMAT_LDP_VC),
