@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 const FORMAT_JWT: &str = "jwt";
 const FORMAT_JWT_VC: &str = "jwt_vc";
-const FORMAT_SD_JWT_VC: &str = "vc+sd-jwt";
+const FORMAT_SD_JWT_VC: &str = "dc+sd-jwt";
 const FORMAT_JWT_VP: &str = "jwt_vp";
 const FORMAT_JWT_VC_JSON: &str = "jwt_vc_json";
 const FORMAT_JWT_VP_JSON: &str = "jwt_vp_json";
@@ -49,7 +49,7 @@ pub enum ClaimFormat {
         /// The algorithm used to sign the JWT verifiable credential.
         alg: Vec<String>,
     },
-    #[serde(rename = "vc+sd-jwt")]
+    #[serde(rename = "dc+sd-jwt")]
     SdJwtVc {
         /// The algorithm used to sign the SD-JWT verifiable credential.
         #[serde(rename = "sd-jwt_alg_values")]
@@ -144,7 +144,7 @@ impl ClaimFormat {
         match self {
             ClaimFormat::Jwt { .. } => "jwt".to_string(),
             ClaimFormat::JwtVc { .. } => "jwt_vc".to_string(),
-            ClaimFormat::SdJwtVc { .. } => "vc+sd-jwt".to_string(),
+            ClaimFormat::SdJwtVc { .. } => "dc+sd-jwt".to_string(),
             ClaimFormat::JwtVp { .. } => "jwt_vp".to_string(),
             ClaimFormat::JwtVcJson { .. } => "jwt_vc_json".to_string(),
             ClaimFormat::JwtVpJson { .. } => "jwt_vp_json".to_string(),

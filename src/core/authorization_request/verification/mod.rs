@@ -37,7 +37,8 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        Err(Error::protocol_access_denied("'did' client verification is not supported"))
+        let state = decoded_request.state();
+        Err(Error::protocol_access_denied("'did' client verification is not supported", state.clone()))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `entity_id`.
@@ -46,7 +47,8 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        Err(Error::protocol_access_denied("'entity_id' client verification is not supported"))
+        let state = decoded_request.state();
+        Err(Error::protocol_access_denied("'entity_id' client verification is not supported", state.clone()))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `pre-registered`.
@@ -55,7 +57,8 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        Err(Error::protocol_access_denied("'preregistered' client verification is not supported"))
+        let state = decoded_request.state();
+        Err(Error::protocol_access_denied("'preregistered' client verification is not supported", state.clone()))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `redirect_uri`.
@@ -66,7 +69,8 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         redirect_uri: &Url,
     ) -> Result<(), Error> {
-        Err(Error::protocol_access_denied("'redirect_uri' client verification is not supported"))
+        let state = decoded_request.state();
+        Err(Error::protocol_access_denied("'redirect_uri' client verification is not supported", state.clone()))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `verifier_attestation`.
@@ -75,7 +79,8 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        Err(Error::protocol_access_denied("'verifier_attestation' client verification is not supported"))
+        let state = decoded_request.state();
+        Err(Error::protocol_access_denied("'verifier_attestation' client verification is not supported", state.clone()))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_dns`.
@@ -86,7 +91,8 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        Err(Error::protocol_access_denied("'x509_san_dns' client verification is not supported"))
+        let state = decoded_request.state();
+        Err(Error::protocol_access_denied("'x509_san_dns' client verification is not supported", state.clone()))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_uri`.
@@ -97,7 +103,8 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        Err(Error::protocol_access_denied("'x509_san_uri' client verification is not supported"))
+        let state = decoded_request.state();
+        Err(Error::protocol_access_denied("'x509_san_uri' client verification is not supported", state.clone()))
     }
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is any other value.
@@ -107,7 +114,8 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
-        Err(Error::protocol_access_denied("'other' client verification is not supported"))
+        let state = decoded_request.state();
+        Err(Error::protocol_access_denied("'other' client verification is not supported", state.clone()))
     }
 }
 
@@ -129,6 +137,7 @@ where
                     .map_err(|e| {
                         Error::protocol_invalid_req(
                             "unable to decode Authorization Request Object JWT",
+                            None
                         )
                         .add_source(e.into())
                     })?
@@ -161,6 +170,7 @@ pub(crate) async fn validate_request_against_metadata<W>(
 where
     W: Wallet + ?Sized,
 {
+    let state = request.state();
     let wallet_metadata = wallet.metadata();
 
     let client_id_scheme = request.client_id_scheme();
@@ -172,13 +182,13 @@ where
         return Err(Error::protocol_invalid_req(&format!(
             "wallet does not support client_id_scheme '{}'",
             client_id_scheme
-        )));
+        ), state.clone()));
     }
 
     validate_response_type(request, wallet_metadata)?;
 
     let client_metadata = ClientMetadata::resolve(request, wallet.http_client()).await?;
-    validate_vp_formats(&client_metadata, wallet_metadata)?;
+    validate_vp_formats(&client_metadata, wallet_metadata, state.clone())?;
 
     let response_mode = request.get::<ResponseMode>().parsing_error()?;
 
@@ -200,7 +210,7 @@ where
                     "unsupported {} '{}'",
                     AuthorizationEncryptedResponseAlg::KEY,
                     alg.0
-                )));
+                ), state.clone()));
             }
         }
         if let Some(supported_encs) =
@@ -211,7 +221,7 @@ where
                     "unsupported {} '{}'",
                     AuthorizationEncryptedResponseEnc::KEY,
                     enc.0
-                )));
+                ), state.clone()));
             }
         }
     }
@@ -223,9 +233,10 @@ fn validate_response_type(
     authorization_request_object: &AuthorizationRequestObject,
     wallet_metadata: &WalletMetadata,
 ) -> Result<(), Error> {
+    let state = authorization_request_object.state();
     let response_type = authorization_request_object
         .get::<ResponseType>()
-        .ok_or_else( || Error::protocol_invalid_req("'response_type' is not declared, it is a required parameter of authorization request object"))?
+        .ok_or_else( || Error::protocol_invalid_req("'response_type' is not declared, it is a required parameter of authorization request object", state.clone()))?
         .context("error occurred when retrieving response type")?;
 
     if !wallet_metadata
@@ -236,16 +247,16 @@ fn validate_response_type(
         return Err(Error::protocol_invalid_req(&format!(
             "response type = '{}' is not supported",
             String::from(response_type)
-        )));
+        ), state.clone()));
     }
 
     if ResponseType::VpTokenIdToken == response_type {
         let subject_syntax_types_supported = authorization_request_object
             .get::<ClientMetadata>()
-            .ok_or_else( || Error::protocol_invalid_req("'client_metadata' is required when response type is 'vp_token id_token'"))?
+            .ok_or_else( || Error::protocol_invalid_req("'client_metadata' is required when response type is 'vp_token id_token'", state.clone()))?
             .context("error occurred when retrieving 'client_metadata'")?
             .0.get::<SubjectSyntaxTypesSupported>()
-            .ok_or_else(|| Error::protocol_invalid_req("'subject_syntax_types_supported' is required when response type is 'vp_token id_token'"))?
+            .ok_or_else(|| Error::protocol_invalid_req("'subject_syntax_types_supported' is required when response type is 'vp_token id_token'", state.clone()))?
             .context("error occurred when retrieving 'subject_syntax_types_supported'")?;
 
         let unsupported = subject_syntax_types_supported.0.iter().find(|s| {
@@ -257,7 +268,7 @@ fn validate_response_type(
         if let Some(unsupported) = unsupported {
             return Err(Error::protocol_invalid_req(&format!(
                 "subject syntax type = '{unsupported}' is not supported"
-            )));
+            ), state.clone()));
         }
     }
 
@@ -267,6 +278,7 @@ fn validate_response_type(
 fn validate_vp_formats(
     metadata: &ClientMetadata,
     wallet_metadata: &WalletMetadata,
+    state: Option<String>
 ) -> Result<(), Error> {
     let Ok(vp_formats) = metadata.0.get::<VpFormatsSupported>().parsing_error() else {
         return Ok(());
@@ -282,7 +294,7 @@ fn validate_vp_formats(
                 "unsupported vp format = '{}' with alg values '{}'",
                 String::from(format.to_owned()),
                 serde_json::to_string(&alg).unwrap_or_else(|_| "".to_string())
-            )));
+            ), state));
         }
     }
 
