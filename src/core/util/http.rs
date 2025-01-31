@@ -10,6 +10,7 @@ use http::{HeaderMap, HeaderValue, Method, Request, Response, Uri};
 /// Generic HTTP client.
 ///
 /// A trait is used here so to facilitate native HTTP/TLS when compiled for mobile applications.
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[async_trait]
 pub trait AsyncHttpClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>>;
@@ -26,14 +27,19 @@ impl AsRef<reqwest::Client> for ReqwestClient {
 
 impl ReqwestClient {
     pub fn new() -> Result<Self> {
-        reqwest::Client::builder()
-            .use_rustls_tls()
+        let mut builder = reqwest::Client::builder();
+
+        #[cfg(not(target_arch = "wasm32"))] {
+            builder = builder.use_rustls_tls()
+        }
+
+            builder
             .build()
             .context("unable to build http_client")
             .map(Self)
     }
 }
-
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[async_trait]
 impl AsyncHttpClient for ReqwestClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>> {
@@ -44,13 +50,15 @@ impl AsyncHttpClient for ReqwestClient {
             .context("http request failed")?;
 
         let mut builder = Response::builder()
-            .status(response.status())
-            .version(response.version());
+            .status(response.status());
 
-        builder
-            .extensions_mut()
-            .context("unable to set extensions")?
-            .extend(response.extensions().clone());
+        #[cfg(not(target_arch = "wasm32"))] {
+            builder = builder.version(response.version());
+            builder
+                .extensions_mut()
+                .context("unable to set extensions")?
+                .extend(response.extensions().clone());
+        }
 
         builder
             .headers_mut()
