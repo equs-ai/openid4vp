@@ -19,9 +19,7 @@ use crate::core::error::Error;
 use crate::core::error::ErrorType::{
     InvalidPresentationDefinitionReference, InvalidPresentationDefinitionUri,
 };
-use crate::core::util::http::{
-    create_get_request, AsyncHttpClient, MIME_TYPE_JSON, MIME_TYPE_TEXT_PLAIN,
-};
+use crate::core::util::http::{create_get_request, AsyncHttpClient, MIME_TYPE_JSON, MIME_TYPE_OAUTH_REQ_JWT, MIME_TYPE_TEXT_PLAIN};
 
 pub mod parameters;
 pub mod verification;
@@ -479,7 +477,7 @@ impl SignedAuthorizationRequest {
             RequestIndirection::ByReference(url) => {
                 let resp = wallet
                     .http_client()
-                    .execute(create_get_request(&url, MIME_TYPE_TEXT_PLAIN)?)
+                    .execute(create_get_request(&url, MIME_TYPE_OAUTH_REQ_JWT)?)
                     .await
                     .map_err(|e| Error::Internal(anyhow!(e)))?;
 

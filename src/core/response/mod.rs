@@ -107,9 +107,8 @@ impl UnencodedAuthorizationResponse {
 
 impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
     fn from(value: UnencodedAuthorizationResponse) -> Self {
-        let vp_token = serde_json::to_string(&value.vp_token)
-            // SAFTEY: VP Token will always be a valid JSON object.
-            .unwrap();
+        let vp_token = value.vp_token.format_to_string();
+
         let presentation_submission = serde_json::to_string(&value.presentation_submission)
             // SAFETY: presentation submission will always be a valid JSON object.
             .unwrap();

@@ -128,6 +128,20 @@ impl VpToken {
     pub fn iter(&self) -> std::slice::Iter<VpTokenItem> {
         self.0.iter()
     }
+
+    pub fn format_to_string(&self) -> String {
+        let mut vp_token = serde_json::to_string(&self)
+            // SAFTEY: VP Token will always be a valid JSON object.
+            .unwrap();
+
+        if self.0.len() == 1 {
+            if let VpTokenItem::String(_) = &self.0[0] {
+                vp_token = vp_token.trim_matches('"').to_string();
+            }
+        }
+
+        vp_token
+    }
 }
 
 impl TypedParameter for VpToken {
