@@ -125,7 +125,7 @@ impl fmt::Display for ClientIdScheme {
 ///
 /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.4
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientMetadata(pub UntypedObject);
 
 impl TypedParameter for ClientMetadata {
