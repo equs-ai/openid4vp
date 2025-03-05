@@ -22,7 +22,7 @@ use crate::signer::Signer;
 use crate::utils::generate_jwt;
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait Wallet: RequestVerifier + Sync {
     type HttpClient: AsyncHttpClient + Send + Sync;
 

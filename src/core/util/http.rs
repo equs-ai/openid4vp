@@ -11,7 +11,7 @@ use http::{HeaderMap, HeaderValue, Method, Request, Response, Uri};
 ///
 /// A trait is used here so to facilitate native HTTP/TLS when compiled for mobile applications.
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait AsyncHttpClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>>;
 }
@@ -40,7 +40,7 @@ impl ReqwestClient {
     }
 }
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl AsyncHttpClient for ReqwestClient {
     async fn execute(&self, request: Request<Vec<u8>>) -> Result<Response<Vec<u8>>> {
         let response = self
