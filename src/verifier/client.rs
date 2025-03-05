@@ -20,7 +20,8 @@ use crate::core::util::http::MIME_TYPE_OAUTH_REQ_JWT;
 use crate::signer::Signer;
 use crate::utils::generate_jwt;
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait Client: Debug {
     fn id(&self) -> &ClientId;
 
@@ -127,7 +128,8 @@ pub enum X509SanVariant {
     Dns,
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl<S: Signer + Sync> Client for DIDClient<S> {
     fn id(&self) -> &ClientId {
         &self.id
@@ -154,7 +156,8 @@ impl<S: Signer + Sync> Client for DIDClient<S> {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl Client for X509SanClient {
     fn id(&self) -> &ClientId {
         &self.id
@@ -201,7 +204,8 @@ impl RedirectUriClient {
         Self { id }
     }
 }
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl Client for RedirectUriClient {
     fn id(&self) -> &ClientId {
         &self.id
