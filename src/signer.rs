@@ -5,7 +5,8 @@ use ssi::jwk::JWK;
 
 use std::fmt::Debug;
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait Signer: Debug {
     type Error: std::fmt::Display;
 
