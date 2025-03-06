@@ -18,7 +18,7 @@ use crate::core::authorization_request::{
 };
 use crate::core::util::http::MIME_TYPE_OAUTH_REQ_JWT;
 use crate::signer::Signer;
-use crate::utils::generate_jwt;
+use crate::utils::{generate_jwt, WasmNotSync};
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -130,7 +130,7 @@ pub enum X509SanVariant {
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-impl<S: Signer + Sync> Client for DIDClient<S> {
+impl<S: Signer + WasmNotSync> Client for DIDClient<S> {
     fn id(&self) -> &ClientId {
         &self.id
     }
