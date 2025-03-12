@@ -21,7 +21,8 @@ pub struct Session {
 }
 
 /// Storage interface for session information.
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait SessionStore: Debug {
     /// Store a new authorization request session.
     async fn initiate(&self, session: Session) -> Result<()>;
@@ -46,7 +47,8 @@ pub struct MemoryStore {
     store: Arc<Mutex<BTreeMap<Uuid, Session>>>,
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl SessionStore for MemoryStore {
     async fn initiate(&self, session: Session) -> Result<()> {
         self.store.try_lock()?.insert(session.uuid, session);

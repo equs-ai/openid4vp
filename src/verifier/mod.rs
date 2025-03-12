@@ -6,6 +6,7 @@ use request_builder::RequestBuilder;
 use url::Url;
 
 use crate::core::object::{TypedParameter, UntypedObject};
+use crate::utils::{WasmNotSend, WasmNotSync};
 
 pub mod by_reference;
 pub mod client;
@@ -13,13 +14,13 @@ pub mod request_builder;
 
 /// An OpenID4VP verifier, also known as the client.
 #[derive(Debug, Clone)]
-pub struct Verifier<C: Client + Send + Sync> {
+pub struct Verifier<C: Client + WasmNotSend + WasmNotSync> {
     client: C,
     default_request_params: UntypedObject,
     submission_endpoint: Url,
 }
 
-impl<C: Client + Send + Sync> Verifier<C> {
+impl<C: Client + WasmNotSend + WasmNotSync> Verifier<C> {
     /// Build a new verifier.
     pub fn builder() -> VerifierBuilder<C> {
         VerifierBuilder {
@@ -37,13 +38,13 @@ impl<C: Client + Send + Sync> Verifier<C> {
 
 /// Builder struct for [Verifier].
 #[derive(Debug, Clone)]
-pub struct VerifierBuilder<C: Client + Send + Sync> {
+pub struct VerifierBuilder<C: Client + WasmNotSend + WasmNotSync> {
     client: Option<C>,
     default_request_params: UntypedObject,
     submission_endpoint: Option<Url>,
 }
 
-impl<C: Client + Send + Sync> VerifierBuilder<C> {
+impl<C: Client + WasmNotSend + WasmNotSync> VerifierBuilder<C> {
     /// Build the verifier.
     pub async fn build(self) -> Result<Verifier<C>> {
         let Self {

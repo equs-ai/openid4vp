@@ -19,12 +19,13 @@ use crate::core::{
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
     presentation_definition::PresentationDefinition,
 };
+use crate::utils::{WasmNotSend, WasmNotSync};
 use crate::verifier::by_reference::ByReference;
 use crate::verifier::client::Client;
 
 #[derive(Debug, Clone)]
 #[must_use]
-pub struct RequestBuilder<'a, C: Client + Send + Sync> {
+pub struct RequestBuilder<'a, C: Client + WasmNotSend + WasmNotSync> {
     presentation_definition: Option<PresentationDefinition>,
     request_parameters: UntypedObject,
     verifier: &'a Verifier<C>,
@@ -36,7 +37,7 @@ pub enum RequestType {
     SignedJwt(ByReference),
 }
 
-impl<'a, C: Client + Send + Sync> RequestBuilder<'a, C> {
+impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
     pub(crate) fn new(verifier: &'a Verifier<C>) -> Self {
         Self {
             presentation_definition: None,

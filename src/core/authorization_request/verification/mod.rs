@@ -28,7 +28,7 @@ pub mod x509_san;
 /// Verifies Authorization Request Objects.
 #[allow(unused_variables)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait RequestVerifier {
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `did`.
     ///

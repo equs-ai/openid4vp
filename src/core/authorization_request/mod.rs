@@ -20,6 +20,7 @@ use crate::core::error::ErrorType::{
     InvalidPresentationDefinitionReference, InvalidPresentationDefinitionUri,
 };
 use crate::core::util::http::{create_get_request, AsyncHttpClient, MIME_TYPE_JSON, MIME_TYPE_OAUTH_REQ_JWT, MIME_TYPE_TEXT_PLAIN};
+use crate::utils::{WasmNotSend, WasmNotSync};
 
 pub mod parameters;
 pub mod verification;
@@ -218,7 +219,7 @@ impl AuthorizationRequestObject {
         http_client: &HC,
     ) -> Result<PresentationDefinition, Error>
     where
-        HC: AsyncHttpClient + Send + Sync,
+        HC: AsyncHttpClient + WasmNotSend + WasmNotSync,
     {
         match &self.5 {
             PresentationDefinitionIndirection::ByValue(by_value) => Ok(by_value.clone()),
@@ -426,7 +427,7 @@ impl SignedAuthorizationRequest {
     /// Try to resolve `response_uri`.
     pub async fn resolve_response_uri<HC>(&self, http_client: &HC) -> Result<Url, Error>
     where
-        HC: AsyncHttpClient + Send + Sync,
+        HC: AsyncHttpClient + WasmNotSend + WasmNotSync,
     {
         let jwt = self.retrieve_unverified_jwt(http_client).await?;
 
@@ -451,7 +452,7 @@ impl SignedAuthorizationRequest {
 
     async fn retrieve_unverified_jwt<HC>(&self, http_client: &HC) -> Result<String, Error>
     where
-        HC: AsyncHttpClient + Send + Sync,
+        HC: AsyncHttpClient + WasmNotSend + WasmNotSync,
     {
         let unverified_jwt = match &self.request_indirection {
             RequestIndirection::ByValue(jwt) => jwt.to_owned(),

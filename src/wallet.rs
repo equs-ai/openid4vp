@@ -19,12 +19,12 @@ use crate::core::{
     response::{AuthorizationResponse, PostRedirection},
 };
 use crate::signer::Signer;
-use crate::utils::generate_jwt;
+use crate::utils::{generate_jwt, WasmNotSend, WasmNotSync};
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-#[async_trait]
-pub trait Wallet: RequestVerifier + Sync {
-    type HttpClient: AsyncHttpClient + Send + Sync;
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+pub trait Wallet: RequestVerifier + WasmNotSync {
+    type HttpClient: AsyncHttpClient + WasmNotSend + WasmNotSync;
 
     fn metadata(&self) -> &WalletMetadata;
     fn http_client(&self) -> &Self::HttpClient;
@@ -123,7 +123,7 @@ pub trait Wallet: RequestVerifier + Sync {
         signer: S,
     ) -> Result<String>
     where
-        S: Signer + Send + Sync,
+        S: Signer + WasmNotSend + WasmNotSync,
     {
         let IdTokenParams {
             audience,
