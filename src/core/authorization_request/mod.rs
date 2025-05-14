@@ -425,7 +425,10 @@ impl DerefMut for AuthorizationRequestObject {
 
 impl SignedAuthorizationRequest {
     /// Try to resolve `response_uri`.
-    pub async fn resolve_response_uri<HC>(&self, http_client: &HC) -> Result<Url, Error>
+    pub async fn resolve_response_uri_and_mode<HC>(
+        &self,
+        http_client: &HC,
+    ) -> Result<(Url, ResponseMode), Error>
     where
         HC: AsyncHttpClient + WasmNotSend + WasmNotSync,
     {
@@ -440,7 +443,7 @@ impl SignedAuthorizationRequest {
                 })?
                 .try_into()?;
 
-        Ok(aro.return_uri().to_owned())
+        Ok((aro.return_uri().to_owned(), aro.response_mode().to_owned()))
     }
 
     pub(crate) fn to_url(self, mut authorization_endpoint: Url) -> Result<Url, Error> {
