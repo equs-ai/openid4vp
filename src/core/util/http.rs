@@ -29,11 +29,12 @@ impl ReqwestClient {
     pub fn new() -> Result<Self> {
         let mut builder = reqwest::Client::builder();
 
-        #[cfg(not(target_arch = "wasm32"))] {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
             builder = builder.use_rustls_tls()
         }
 
-            builder
+        builder
             .build()
             .context("unable to build http_client")
             .map(Self)
@@ -49,10 +50,10 @@ impl AsyncHttpClient for ReqwestClient {
             .await
             .context("http request failed")?;
 
-        let mut builder = Response::builder()
-            .status(response.status());
+        let mut builder = Response::builder().status(response.status());
 
-        #[cfg(not(target_arch = "wasm32"))] {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
             builder = builder.version(response.version());
             builder
                 .extensions_mut()

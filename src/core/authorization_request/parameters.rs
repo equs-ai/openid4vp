@@ -6,7 +6,6 @@ use crate::core::{
         AuthorizationSignedResponseAlg, JWKs, VpFormats,
     },
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
-    presentation_definition::PresentationDefinition as PresentationDefinitionParsed,
 };
 use crate::utils::from_string_or_value;
 use anyhow::{anyhow, bail, Context, Error, Ok};
@@ -608,53 +607,6 @@ impl From<State> for Json {
         Json::String(value.0)
     }
 }
-
-// TODO: Revisit the inner parsed type.
-#[derive(Debug, Clone)]
-pub struct PresentationDefinition {
-    raw: Json,
-    parsed: PresentationDefinitionParsed,
-}
-
-impl PresentationDefinition {
-    pub fn into_parsed(self) -> PresentationDefinitionParsed {
-        self.parsed
-    }
-
-    pub fn parsed(&self) -> &PresentationDefinitionParsed {
-        &self.parsed
-    }
-}
-
-impl TryFrom<PresentationDefinitionParsed> for PresentationDefinition {
-    type Error = Error;
-
-    fn try_from(parsed: PresentationDefinitionParsed) -> Result<Self, Self::Error> {
-        let raw = serde_json::to_value(parsed.clone())?;
-        Ok(Self { raw, parsed })
-    }
-}
-
-impl TypedParameter for PresentationDefinition {
-    const KEY: &'static str = "presentation_definition";
-}
-
-impl TryFrom<Json> for PresentationDefinition {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        let parsed = from_string_or_value(&value)?;
-
-        Ok(Self { raw: value, parsed })
-    }
-}
-
-impl From<PresentationDefinition> for Json {
-    fn from(value: PresentationDefinition) -> Self {
-        value.raw
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct PresentationDefinitionUri(pub Url);
 
@@ -738,5 +690,64 @@ impl TryFrom<Json> for IdTokenType {
 impl From<IdTokenType> for Json {
     fn from(idt: IdTokenType) -> Self {
         Json::String(idt.into())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::core::authorization_request::ResolvedPresentationQuery;
+    use serde_json::json;
+
+    use crate::core::dcql::DcqlCredential;
+
+    #[test]
+    fn test() {
+        serde_json::from_value::<DcqlCredential>(json!(
+            {
+              "id": "pid",
+              "format": "dc+sd-jwt",
+              "claims": [
+                {
+                  "path": [
+                    "username"
+                  ]
+                },
+                {
+                  "path": [
+                    "birthDate"
+                  ]
+                },
+                {
+                  "path": [
+                    "email",
+                    "work"
+                  ]
+                }
+              ]
+            }
+        ))
+        .unwrap();
+    }
+    #[test]
+    fn deserialize_common_presentation() {
+        get_json();
+    }
+
+    fn get_json() -> ResolvedPresentationQuery {
+        serde_json::from_value(json!(
+          {
+              "presentation_definition": {
+              "id": "327ad171-c80a-485b-b098-50d7ad278ef6",
+                        "input_descriptors": [
+                          {
+                            "id": "Identity-1",
+                            "name": "Identity VC",
+                            "purpose": "We want an identity"
+                          }
+                        ]
+          }
+        }
+        ))
+        .unwrap()
     }
 }

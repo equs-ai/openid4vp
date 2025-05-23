@@ -91,8 +91,10 @@ pub enum ErrorType {
     VpFormatsNotSupported,
     InvalidPresentationDefinitionUri,
     InvalidPresentationDefinitionReference,
+    InvalidPresentationDefinitionFormat,
     InvalidRequestUriMethod,
     WalletUnavailable,
+    InvalidDCQLFormat,
 }
 
 impl Display for ErrorType {
@@ -119,11 +121,17 @@ impl Display for ErrorType {
             ErrorType::InvalidPresentationDefinitionReference => {
                 write!(f, "invalid_presentation_definition_reference")
             }
+            ErrorType::InvalidPresentationDefinitionFormat => {
+                write!(f, "invalid_presentation_definition_format")
+            }
             ErrorType::InvalidRequestUriMethod => {
                 write!(f, "invalid_request_uri_method")
             }
             ErrorType::WalletUnavailable => {
                 write!(f, "wallet_unavailable")
+            }
+            ErrorType::InvalidDCQLFormat => {
+                write!(f, "invalid_dcql_format")
             }
         }
     }

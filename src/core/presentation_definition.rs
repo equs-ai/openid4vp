@@ -5,9 +5,11 @@ use super::presentation_submission::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use anyhow::Result;
+use crate::core::object::TypedParameter;
+use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
+use serde_json::Value as Json;
 
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
 ///
@@ -244,6 +246,24 @@ impl PresentationDefinition {
                     _ => true,
                 }
             })
+    }
+}
+
+impl TypedParameter for PresentationDefinition {
+    const KEY: &'static str = "presentation_definition";
+}
+
+impl TryFrom<Json> for PresentationDefinition {
+    type Error = Error;
+
+    fn try_from(value: Json) -> std::result::Result<Self, Self::Error> {
+        anyhow::Ok(serde_json::from_value(value).map_err(Error::msg)?)
+    }
+}
+
+impl From<PresentationDefinition> for Json {
+    fn from(value: PresentationDefinition) -> Self {
+        serde_json::to_value(value).unwrap_or_default()
     }
 }
 
