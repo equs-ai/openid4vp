@@ -36,6 +36,8 @@ tracing = "0.1.37"
 url = { version = "2.4.1", features = ["serde"] }
 x509-cert = "0.2.4"
 thiserror = "1.0.65"
+regex = "1.11.1"
+rstest = "0.25.0"
 
 [dev-dependencies]
 serde_json = { version = "1.0", features = ["preserve_order"] }

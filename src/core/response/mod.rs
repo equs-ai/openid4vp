@@ -1,9 +1,9 @@
 use super::{object::UntypedObject, presentation_submission::PresentationSubmission};
 
 use self::parameters::VpToken;
+use crate::core::authorization_request::parameters::State;
 use crate::core::object::ParsingErrorContext;
 use crate::core::response::parameters::IdToken;
-use crate::core::authorization_request::parameters::State;
 use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -28,15 +28,14 @@ impl AuthorizationResponse {
         let vp_token: VpToken =
             serde_json::from_str(&unencoded.vp_token).context("failed to decode vp token")?;
 
-        let presentation_submission: PresentationSubmission =
-            serde_json::from_str(&unencoded.presentation_submission)
-                .context("failed to decode presentation submission")?;
-
+        let presentation_submission = unencoded
+            .presentation_submission
+            .map(|ps| serde_json::from_str(&ps))
+            .transpose()?;
         let id_token = unencoded
             .id_token
             .map(|jwt| IdToken::try_from(jwt).parsing_error())
-            .context("failed to decode id token")?
-            .ok();
+            .transpose()?;
 
         let state = unencoded.state;
 
@@ -44,7 +43,7 @@ impl AuthorizationResponse {
             vp_token,
             presentation_submission,
             id_token,
-            state
+            state,
         }))
     }
 }
@@ -54,7 +53,8 @@ struct JsonEncodedAuthorizationResponse {
     /// `vp_token` is JSON string encoded.
     pub(crate) vp_token: String,
     /// `presentation_submission` is JSON string encoded.
-    pub(crate) presentation_submission: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) presentation_submission: Option<String>,
     /// `id_token` is JSON string encoded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) id_token: Option<String>,
@@ -66,7 +66,8 @@ struct JsonEncodedAuthorizationResponse {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct UnencodedAuthorizationResponse {
     pub vp_token: VpToken,
-    pub presentation_submission: PresentationSubmission,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation_submission: Option<PresentationSubmission>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id_token: Option<IdToken>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -90,8 +91,8 @@ impl UnencodedAuthorizationResponse {
     }
 
     /// Return the Presentation Submission.
-    pub fn presentation_submission(&self) -> &PresentationSubmission {
-        &self.presentation_submission
+    pub fn presentation_submission(&self) -> Option<&PresentationSubmission> {
+        self.presentation_submission.as_ref()
     }
 
     /// Return the Self Issued Id Token.
@@ -109,9 +110,9 @@ impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
     fn from(value: UnencodedAuthorizationResponse) -> Self {
         let vp_token = value.vp_token.format_to_string();
 
-        let presentation_submission = serde_json::to_string(&value.presentation_submission)
-            // SAFETY: presentation submission will always be a valid JSON object.
-            .unwrap();
+        let presentation_submission = value
+            .presentation_submission
+            .and_then(|ps| serde_json::to_string(&ps).ok());
         let id_token = value.id_token.map(|i| i.jwt());
         let state = value.state;
 
@@ -119,7 +120,7 @@ impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
             vp_token,
             presentation_submission,
             id_token,
-            state
+            state,
         }
     }
 }
@@ -148,7 +149,7 @@ impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
 
     fn try_from(value: UntypedObject) -> Result<Self, Self::Error> {
         let vp_token = value.get().parsing_error()?;
-        let presentation_submission = value.get().parsing_error()?;
+        let presentation_submission = value.get().parsing_error().ok();
         let id_token = value
             .get::<IdToken>()
             .map(|value| value.parsing_error())
@@ -164,7 +165,7 @@ impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
             vp_token,
             presentation_submission,
             id_token,
-            state
+            state,
         })
     }
 }
@@ -206,7 +207,7 @@ mod test {
         let url_encoded = response.into_x_www_form_urlencoded().unwrap();
 
         assert!(url_encoded.contains("presentation_submission=%7B%22id%22%3A%22d05a7f51-ac09-43af-8864-e00f0175f2c7%22%2C%22definition_id%22%3A%22f619e64a-8f80-4b71-8373-30cf07b1e4f2%22%2C%22descriptor_map%22%3A%5B%5D%7D"));
-        assert!(url_encoded.contains("vp_token=%22string%22"));
+        assert!(url_encoded.contains("vp_token=string"));
         assert!(url_encoded.contains("state=some_state"));
     }
 }

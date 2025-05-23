@@ -1,5 +1,6 @@
 pub mod authorization_request;
 pub mod credential_format;
+pub mod dcql;
 pub mod error;
 pub mod input_descriptor;
 pub mod metadata;

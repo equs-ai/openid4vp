@@ -4,11 +4,11 @@ use url::Url;
 use super::Verifier;
 use crate::core::authorization_request::parameters::{ClientMetadata, RedirectUri, ResponseUri};
 use crate::core::authorization_request::SignedAuthorizationRequest;
-use crate::core::error::Error;
+use crate::core::dcql::DCQL;
+use crate::core::error::{Error, ErrorType};
 use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
 use crate::core::{
     authorization_request::{
-        self,
         parameters::{ResponseMode, ResponseType},
         AuthorizationRequestObject, RequestIndirection,
     },
@@ -27,6 +27,7 @@ use crate::verifier::client::Client;
 #[must_use]
 pub struct RequestBuilder<'a, C: Client + WasmNotSend + WasmNotSync> {
     presentation_definition: Option<PresentationDefinition>,
+    dcql: Option<DCQL>,
     request_parameters: UntypedObject,
     verifier: &'a Verifier<C>,
 }
@@ -42,6 +43,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         Self {
             presentation_definition: None,
             request_parameters: verifier.default_request_params.clone(),
+            dcql: None,
             verifier,
         }
     }
@@ -52,6 +54,12 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         presentation_definition: PresentationDefinition,
     ) -> Self {
         self.presentation_definition = Some(presentation_definition);
+        self
+    }
+
+    /// Set the dcql query.
+    pub fn with_dcql(mut self, dcql: DCQL) -> Self {
+        self.dcql = Some(dcql);
         self
     }
 
@@ -77,21 +85,33 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         let _ = self.request_parameters.insert(client_id.clone());
         let _ = self.request_parameters.insert(client_id_scheme.clone());
 
-        let Some(ref presentation_definition) = self.presentation_definition else {
+        if (self.dcql.is_none() && self.presentation_definition.is_none())
+            || (self.dcql.is_some() && self.presentation_definition.is_some())
+        {
             return Err(Error::internal(anyhow!(
-                "presentation definition is required, see `with_presentation_definition`"
+                "one and only one of presentation definition or dcql query is required"
             )));
         };
 
-        Self::validate_presentation_definition(presentation_definition)?;
+        match &self.presentation_definition {
+            Some(pd) => {
+                Self::validate_presentation_definition(pd)?;
+                self.request_parameters.insert(pd.to_owned());
+            }
+            None => match &self.dcql {
+                Some(dcql) => {
+                    self.request_parameters.insert(dcql.to_owned());
+                }
+                None => {
+                    return Err(Error::protocol(
+                        ErrorType::InvalidRequest,
+                        "At least one of dcql or presentation_definition should be present",
+                        None,
+                    ));
+                }
+            },
+        }
         self.validate_response_type(&wallet_metadata)?;
-
-        let _ = self.request_parameters.insert(
-            authorization_request::parameters::PresentationDefinition::try_from(
-                presentation_definition.clone(),
-            )
-            .context("failed to construct PresentationDefinition request parameter")?,
-        );
 
         if !wallet_metadata
             .get_or_default::<ClientIdSchemesSupported>()?
