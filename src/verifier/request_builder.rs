@@ -2,7 +2,9 @@ use anyhow::{anyhow, Context, Result};
 use url::Url;
 
 use super::Verifier;
-use crate::core::authorization_request::parameters::{ClientMetadata, RedirectUri, ResponseUri};
+use crate::core::authorization_request::parameters::{
+    ClientId, ClientIdScheme, ClientMetadata, RedirectUri, ResponseUri,
+};
 use crate::core::authorization_request::SignedAuthorizationRequest;
 use crate::core::dcql::DCQL;
 use crate::core::error::{Error, ErrorType};
@@ -79,12 +81,21 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         wallet_metadata: &WalletMetadata,
         request_type: RequestType,
     ) -> Result<(Url, Option<String>), Error> {
-        let client_id = self.verifier.client.id();
+        let raw_client_id = self.verifier.client.id().0.clone();
         let client_id_scheme = self.verifier.client.scheme();
-
+        let merged_client_id = if client_id_scheme == ClientIdScheme::Did
+            || client_id_scheme == ClientIdScheme::Https
+        {
+            raw_client_id
+        } else {
+            format!(
+                "{}:{}",
+                String::from(client_id_scheme.clone()),
+                raw_client_id
+            )
+        };
+        let client_id = ClientId(merged_client_id);
         let _ = self.request_parameters.insert(client_id.clone());
-        let _ = self.request_parameters.insert(client_id_scheme.clone());
-
         if (self.dcql.is_none() && self.presentation_definition.is_none())
             || (self.dcql.is_some() && self.presentation_definition.is_some())
         {
@@ -116,10 +127,11 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         if !wallet_metadata
             .get_or_default::<ClientIdSchemesSupported>()?
             .0
-            .contains(client_id_scheme)
+            .contains(&client_id_scheme)
         {
+            let scheme = String::from(client_id_scheme);
             return Err(Error::internal(anyhow!(
-                "the wallet does not support the client_id_scheme '{client_id_scheme}'"
+                "the wallet does not support the client_id_scheme '{scheme}'"
             )));
         }
 
@@ -167,7 +179,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
 
                 let request_indirection = match pass_by_reference {
                     ByReference::False => RequestIndirection::ByValue(auth_req_jwt.clone()),
-                    ByReference::True { at } => RequestIndirection::ByReference(at),
+                    ByReference::True(rr) => RequestIndirection::ByReference(rr),
                 };
                 let signed_auth_req = SignedAuthorizationRequest {
                     client_id: client_id.0.clone(),

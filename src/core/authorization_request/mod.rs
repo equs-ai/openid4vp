@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use anyhow::anyhow;
@@ -9,22 +10,25 @@ use url::Url;
 use crate::wallet::Wallet;
 
 use self::parameters::{
-    ClientId, ClientIdScheme, Nonce, PresentationDefinitionUri, RedirectUri, ResponseMode,
-    ResponseType, ResponseUri,
+    ClientId, Nonce, PresentationDefinitionUri, RedirectUri, ResponseMode, ResponseType,
+    ResponseUri,
 };
 use super::object::{ParsingErrorContext, UntypedObject};
-use crate::core::authorization_request::parameters::{ClientMetadata, State};
+use crate::core::authorization_request::parameters::{
+    ClientMetadata, HttpMethodForAuth, State, TransactionData, WalletNonce,
+};
 use crate::core::authorization_request::verification::verify_request;
 use crate::core::dcql::DCQL;
-use crate::core::error::Error;
 use crate::core::error::ErrorType::{
     InvalidDCQLFormat, InvalidPresentationDefinitionFormat, InvalidPresentationDefinitionReference,
     InvalidPresentationDefinitionUri,
 };
+use crate::core::error::{Error, ErrorType};
+use crate::core::metadata::url_encode_wallet_metadata;
 use crate::core::presentation_definition::PresentationDefinition;
 use crate::core::util::http::{
-    create_get_request, AsyncHttpClient, MIME_TYPE_JSON, MIME_TYPE_OAUTH_REQ_JWT,
-    MIME_TYPE_TEXT_PLAIN,
+    create_get_request, create_post_request, AsyncHttpClient, MIME_TYPE_FORM_URLENCODED,
+    MIME_TYPE_JSON, MIME_TYPE_OAUTH_REQ_JWT,
 };
 use crate::utils::{WasmNotSend, WasmNotSync};
 
@@ -33,17 +37,16 @@ pub mod verification;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "UntypedObject", into = "UntypedObject")]
-pub struct AuthorizationRequestObject(
-    UntypedObject,
-    ClientId,
-    ClientIdScheme,
-    ResponseMode,
-    ResponseType,
-    PresentationQuery,
-    Url,
-    Nonce,
-    ClientMetadata,
-);
+pub struct AuthorizationRequestObject {
+    inner: UntypedObject,
+    client_id: ClientId,
+    response_mode: ResponseMode,
+    response_type: ResponseType,
+    presentation_query: PresentationQuery,
+    return_uri: Url,
+    nonce: Nonce,
+    client_metadata: ClientMetadata,
+}
 
 /// An Authorization Request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,10 +78,16 @@ pub enum FetchedAuthorizationRequest {
 pub enum RequestIndirection {
     #[serde(rename = "request")]
     ByValue(String),
-    #[serde(rename = "request_uri")]
-    ByReference(Url),
+    #[serde(untagged)]
+    ByReference(RequestReference),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestReference {
+    pub request_uri: Url,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_uri_method: Option<HttpMethodForAuth>,
+}
 /// A DCQL passed as value or PresentationDefinition passed by value or by reference
 #[derive(Debug, Clone)]
 pub enum PresentationQuery {
@@ -119,7 +128,7 @@ impl ResolvedPresentationQuery {
 
 impl AuthorizationRequest {
     /// Validate the [AuthorizationRequest] according to the client_id scheme and return the parsed
-    /// [RequestObject].
+    /// [AuthorizationRequestObject].
     ///
     /// Custom wallet metadata can be provided, otherwise the default metadata for this profile is used.
     pub async fn validate<W>(self, wallet: &W) -> Result<AuthorizationRequestObject, Error>
@@ -242,18 +251,20 @@ impl AuthorizationRequest {
 
 impl AuthorizationRequestObject {
     pub fn state(&self) -> Option<String> {
-        self.0
+        self.inner
             .get::<State>()
             .and_then(|result| result.ok())
             .map(|s| s.0)
     }
 
     pub fn client_id(&self) -> &ClientId {
-        &self.1
+        &self.client_id
     }
 
-    pub fn client_id_scheme(&self) -> &ClientIdScheme {
-        &self.2
+    pub fn get_transaction_data(&self) -> Option<TransactionData> {
+        self.inner
+            .get::<TransactionData>()
+            .and_then(|result| result.ok())
     }
 
     pub async fn resolve_presentation_query<HC>(
@@ -263,7 +274,7 @@ impl AuthorizationRequestObject {
     where
         HC: AsyncHttpClient + WasmNotSend + WasmNotSync,
     {
-        match &self.5 {
+        match &self.presentation_query {
             PresentationQuery::DCQL(dcql) => Ok(ResolvedPresentationQuery::DCQL(dcql.clone())),
             PresentationQuery::PresentationDefinition(pdw) => match pdw {
                 PresentationDefinitionIndirection::ByValue(pd) => Ok(
@@ -306,7 +317,7 @@ impl AuthorizationRequestObject {
     }
 
     pub(crate) fn to_url(self, mut authorization_endpoint: Url) -> Result<Url, Error> {
-        let query = serde_urlencoded::to_string(self.0.flatten_for_form()?)
+        let query = serde_urlencoded::to_string(self.inner.flatten_for_form()?)
             .map_err(|e| Error::Internal(e.into()))?;
 
         authorization_endpoint.set_query(Some(&query));
@@ -314,7 +325,7 @@ impl AuthorizationRequestObject {
     }
 
     pub fn is_id_token_requested(&self) -> Option<bool> {
-        match self.4 {
+        match self.response_type {
             ResponseType::VpToken => Some(false),
             ResponseType::VpTokenIdToken => Some(true),
             ResponseType::Unsupported(_) => None,
@@ -322,34 +333,33 @@ impl AuthorizationRequestObject {
     }
 
     pub fn response_mode(&self) -> &ResponseMode {
-        &self.3
+        &self.response_mode
     }
 
     pub fn response_type(&self) -> &ResponseType {
-        &self.4
+        &self.response_type
     }
 
     /// Uri to submit the response at.
     ///
     /// AKA [ResponseUri] or [RedirectUri] depending on [ResponseMode].
     pub fn return_uri(&self) -> &Url {
-        &self.6
+        &self.return_uri
     }
 
     pub fn nonce(&self) -> &Nonce {
-        &self.7
+        &self.nonce
     }
 
     pub fn client_metadata(&self) -> &ClientMetadata {
-        &self.8
+        &self.client_metadata
     }
 }
 
 impl From<AuthorizationRequestObject> for UntypedObject {
     fn from(value: AuthorizationRequestObject) -> Self {
-        let mut inner = value.0;
-        inner.insert(value.1);
-        inner.insert(value.2);
+        let mut inner = value.inner;
+        inner.insert(value.client_id);
         inner
     }
 }
@@ -362,15 +372,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             .get::<State>()
             .and_then(|result| result.ok())
             .map(|s| s.0);
-        let client_id = value.get().parsing_error()?;
-        let client_id_scheme = value.get().parsing_error().map_err(|e| {
-            Error::protocol_invalid_req(
-                "omitting a client_id_scheme is not supported",
-                state.clone(),
-            )
-            .add_source(e.into())
-        })?;
-
+        let client_id: ClientId = value.get().parsing_error()?;
         let redirect_uri = value.get::<RedirectUri>();
         let response_uri = value.get::<ResponseUri>();
 
@@ -444,7 +446,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
 
         let response_type: ResponseType = value.get().parsing_error()?;
 
-        let pd_indirection = match (
+        let presentation_query = match (
             value.get::<PresentationDefinition>(),
             value.get::<PresentationDefinitionUri>(),
             value.get::<DCQL>(),
@@ -477,17 +479,16 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
         let nonce = value.get().parsing_error()?;
         let client_metadata = value.get().parsing_error()?;
 
-        Ok(Self(
-            value,
+        Ok(Self {
+            inner: value,
             client_id,
-            client_id_scheme,
             response_mode,
             response_type,
-            pd_indirection,
+            presentation_query,
             return_uri,
             nonce,
             client_metadata,
-        ))
+        })
     }
 }
 
@@ -495,26 +496,26 @@ impl Deref for AuthorizationRequestObject {
     type Target = UntypedObject;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }
 
 impl DerefMut for AuthorizationRequestObject {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.inner
     }
 }
 
 impl SignedAuthorizationRequest {
     /// Try to resolve `response_uri`.
-    pub async fn resolve_response_uri_and_mode<HC>(
+    pub async fn resolve_response_uri_and_mode<W>(
         &self,
-        http_client: &HC,
+        wallet: &W,
     ) -> Result<(Url, ResponseMode), Error>
     where
-        HC: AsyncHttpClient + WasmNotSend + WasmNotSync,
+        W: Wallet,
     {
-        let jwt = self.retrieve_unverified_jwt(http_client).await?;
+        let jwt = self.retrieve_unverified_jwt(wallet).await?;
 
         let aro: AuthorizationRequestObject =
             ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
@@ -524,6 +525,8 @@ impl SignedAuthorizationRequest {
                     ))
                 })?
                 .try_into()?;
+
+        self.validate_nonce(wallet, &aro).await?;
 
         Ok((aro.return_uri().to_owned(), aro.response_mode().to_owned()))
     }
@@ -535,57 +538,116 @@ impl SignedAuthorizationRequest {
         Ok(authorization_endpoint)
     }
 
-    async fn retrieve_unverified_jwt<HC>(&self, http_client: &HC) -> Result<String, Error>
-    where
-        HC: AsyncHttpClient + WasmNotSend + WasmNotSync,
-    {
-        let unverified_jwt = match &self.request_indirection {
-            RequestIndirection::ByValue(jwt) => jwt.to_owned(),
-            RequestIndirection::ByReference(url) => {
-                let resp = http_client
-                    .execute(create_get_request(&url, MIME_TYPE_TEXT_PLAIN)?)
-                    .await
-                    .map_err(|e| Error::Internal(anyhow!(e)))?;
-
-                Self::http_resp_to_unverified_jwt(resp)?
-            }
-        };
-
-        Ok(unverified_jwt)
-    }
-
     async fn resolve_auth_request<W>(&self, wallet: &W) -> Result<AuthorizationRequestObject, Error>
     where
         W: Wallet + ?Sized,
     {
-        let unverified_jwt = match &self.request_indirection {
-            RequestIndirection::ByValue(jwt) => jwt.to_owned(),
-            RequestIndirection::ByReference(url) => {
-                let resp = wallet
-                    .http_client()
-                    .execute(create_get_request(&url, MIME_TYPE_OAUTH_REQ_JWT)?)
-                    .await
-                    .map_err(|e| Error::Internal(anyhow!(e)))?;
-
-                Self::http_resp_to_unverified_jwt(resp)?
-            }
-        };
+        let unverified_jwt = self.retrieve_unverified_jwt(wallet).await?;
         let fetched_auth_req = FetchedAuthorizationRequest::UnverifiedJwt(unverified_jwt);
 
         let aro = verify_request(wallet, fetched_auth_req).await?;
+        self.validate_nonce(wallet, &aro).await?;
         let state = aro.state();
         if self.client_id.as_str() != aro.client_id().0.as_str() {
             return Err(Error::protocol_invalid_req(
                 &format!(
-                "Authorization Request and Request Object have different client ids: '{}' vs. '{}'",
-                self.client_id,
-                aro.client_id().0
-            ),
+                    "Authorization Request and Request Object have different client ids: '{}' vs. '{}'",
+                    self.client_id,
+                    aro.client_id().0
+                ),
                 state.clone(),
             ));
         }
 
         Ok(aro)
+    }
+
+    async fn retrieve_unverified_jwt<W>(&self, wallet: &W) -> Result<String, Error>
+    where
+        W: Wallet + ?Sized,
+    {
+        match &self.request_indirection {
+            RequestIndirection::ByValue(jwt) => Ok(jwt.to_owned()),
+            RequestIndirection::ByReference(request_reference) => {
+                self.get_by_reference(wallet, request_reference).await
+            }
+        }
+    }
+
+    async fn get_by_reference<W>(
+        &self,
+        wallet: &W,
+        request_reference: &RequestReference,
+    ) -> Result<String, Error>
+    where
+        W: Wallet + ?Sized,
+    {
+        let method = request_reference
+            .request_uri_method
+            .clone()
+            .unwrap_or(HttpMethodForAuth::GET);
+        let resp = match method {
+            HttpMethodForAuth::GET => wallet
+                .http_client()
+                .execute(create_get_request(
+                    &request_reference.request_uri,
+                    MIME_TYPE_OAUTH_REQ_JWT,
+                )?)
+                .await
+                .map_err(|e| Error::Internal(anyhow!(e)))?,
+            HttpMethodForAuth::POST => {
+                let mut body = HashMap::<String, String>::new();
+                let metadata = wallet.metadata();
+                let encoded = url_encode_wallet_metadata(&metadata)?;
+                body.insert(
+                    "wallet_metadata".to_string(),
+                    encoded,
+                );
+                if let Ok(Some(nonce)) = wallet.generate_nonce().await {
+                    body.insert(
+                        "wallet_nonce".to_string(),
+                        serde_urlencoded::to_string(nonce)
+                            .map_err(|e| Error::Internal(anyhow!(e)))?,
+                    );
+                }
+                let body_as_bytes = serde_urlencoded::to_string(body)
+                    .map_err(|e| Error::Internal(anyhow!(e)))?
+                    .into_bytes();
+                wallet
+                    .http_client()
+                    .execute(create_post_request(
+                        &request_reference.request_uri,
+                        &body_as_bytes,
+                        MIME_TYPE_FORM_URLENCODED,
+                        MIME_TYPE_OAUTH_REQ_JWT,
+                    )?)
+                    .await
+                    .map_err(|e| Error::Internal(anyhow!(e)))?
+            }
+        };
+        Self::http_resp_to_unverified_jwt(resp)
+    }
+
+    async fn validate_nonce<W>(
+        &self,
+        wallet: &W,
+        aro: &AuthorizationRequestObject,
+    ) -> Result<(), Error>
+    where
+        W: Wallet + ?Sized,
+    {
+        let wallet_nonce = aro.get::<WalletNonce>().transpose()?;
+        if let Some(nonce) = wallet_nonce {
+            let valid = wallet.validate_nonce(&nonce).await?;
+            if !valid {
+                return Err(Error::protocol(
+                    ErrorType::InvalidRequest,
+                    "wallet_nonce validation did not pass",
+                    None,
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn http_resp_to_unverified_jwt(resp: Response<Vec<u8>>) -> Result<String, Error> {
@@ -725,7 +787,7 @@ mod tests {
                "credentials": [
                     {
                       "id": "pid",
-                      "format": "vc+sd-jwt",
+                      "format": "dc+sd-jwt",
                       "meta": {
                         "vct_values": ["https://credentials.example.com/identity_credential"]
                       },
@@ -737,7 +799,7 @@ mod tests {
                     },
                     {
                       "id": "pid",
-                      "format": "vc+sd-jwt",
+                      "format": "dc+sd-jwt",
                       "meta": {
                         "vct_values": [ "https://credentials.example.com/identity_credential" ]
                       },
@@ -825,7 +887,7 @@ mod tests {
                "credentials": [
                     {
                         "id": "some id",
-                       "format": "vc+sd-jwt",
+                       "format": "dc+sd-jwt",
                         "meta": {
                         "test": "test",
                     },

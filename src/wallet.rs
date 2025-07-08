@@ -1,10 +1,4 @@
-use anyhow::{anyhow, Context, Result};
-use async_trait::async_trait;
-use serde_json::json;
-use tracing::warn;
-use url::Url;
-
-use crate::core::authorization_request::parameters::Nonce;
+use crate::core::authorization_request::parameters::{Nonce, WalletNonce};
 use crate::core::error::Error;
 use crate::core::response::parameters::IdTokenBody;
 use crate::core::util::http::{
@@ -20,6 +14,11 @@ use crate::core::{
 };
 use crate::signer::Signer;
 use crate::utils::{generate_jwt, WasmNotSend, WasmNotSync};
+use anyhow::{anyhow, Context, Result};
+use async_trait::async_trait;
+use serde_json::json;
+use tracing::warn;
+use url::Url;
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -28,6 +27,14 @@ pub trait Wallet: RequestVerifier + WasmNotSync {
 
     fn metadata(&self) -> &WalletMetadata;
     fn http_client(&self) -> &Self::HttpClient;
+
+    /// We may be asked by the user to use wallet_nonce to counter replay attacks.
+    /// Then [self.generate_nonce] and [self.validate_nonce] must be implemented by the corresponding holder that implements the Wallet trait.
+    /// Another way to do the job may have been similar to how HttpClient type added and an implementation passed but
+    /// The nonce generation/validation is optional and Option is not associated type.
+    async fn generate_nonce(&self) -> Result<Option<WalletNonce>>;
+
+    async fn validate_nonce(&self, nonce: &WalletNonce) -> Result<bool>;
 
     async fn validate_request(&self, url: &Url) -> Result<AuthorizationRequestObject, Error> {
         let ar = AuthorizationRequest::from_url(url, &self.metadata().authorization_endpoint().0)

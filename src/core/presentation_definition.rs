@@ -6,11 +6,11 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use crate::core::object::TypedParameter;
+use crate::utils::from_string_or_value;
 use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use serde_json::Value as Json;
-use crate::utils::from_string_or_value;
 
 /// A presentation definition is a JSON object that describes the information a [Verifier](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:verifier) requires of a [Holder](https://identity.foundation/presentation-exchange/spec/v2.0.0/#term:holder).
 ///
