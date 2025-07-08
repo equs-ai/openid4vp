@@ -4,6 +4,7 @@ use super::{
 };
 use crate::core::authorization_request::parameters::ResponseType;
 use crate::core::error::Error;
+use crate::core::error::ErrorType::ClientIDSchemeNotGiven;
 use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
 use crate::core::metadata::WalletMetadata;
 use crate::core::{
@@ -19,7 +20,6 @@ use crate::core::{
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use url::Url;
 
 pub mod did;
 pub mod verifier;
@@ -36,7 +36,7 @@ pub trait RequestVerifier {
     async fn did(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        request_jwt: String,
+        did: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -45,11 +45,11 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `entity_id`.
+    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `entity_id` or `https`.
     async fn entity_id(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        request_jwt: String,
+        entity_id: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -62,7 +62,7 @@ pub trait RequestVerifier {
     async fn preregistered(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        request_jwt: String,
+        registered_link: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -77,7 +77,7 @@ pub trait RequestVerifier {
     async fn redirect_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        redirect_uri: &Url,
+        redirect_uri: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -90,11 +90,24 @@ pub trait RequestVerifier {
     async fn verifier_attestation(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        request_jwt: String,
+        attestation: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
             "'verifier_attestation' client verification is not supported",
+            state.clone(),
+        ))
+    }
+
+    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `web-origin`.
+    async fn web_origin(
+        &self,
+        decoded_request: &AuthorizationRequestObject,
+        link: String,
+    ) -> Result<(), Error> {
+        let state = decoded_request.state();
+        Err(Error::protocol_access_denied(
+            "'web_origin' client verification is not supported",
             state.clone(),
         ))
     }
@@ -105,7 +118,7 @@ pub trait RequestVerifier {
     async fn x509_san_dns(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        request_jwt: String,
+        dns: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -120,7 +133,7 @@ pub trait RequestVerifier {
     async fn x509_san_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        request_jwt: String,
+        uri: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -134,7 +147,7 @@ pub trait RequestVerifier {
         &self,
         client_id_scheme: &str,
         decoded_request: &AuthorizationRequestObject,
-        request_jwt: String,
+        link: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -153,7 +166,9 @@ where
 {
     let request = match fetched_request {
         FetchedAuthorizationRequest::Plain(request) => {
-            wallet.redirect_uri(&request, request.return_uri()).await?;
+            wallet
+                .redirect_uri(&request, request.return_uri().to_string())
+                .await?;
             request
         }
         FetchedAuthorizationRequest::UnverifiedJwt(jwt) => {
@@ -168,18 +183,31 @@ where
                     })?
                     .try_into()?;
 
-            match request.client_id_scheme() {
-                ClientIdScheme::Did => wallet.did(&request, jwt).await?,
-                ClientIdScheme::EntityId => wallet.entity_id(&request, jwt).await?,
-                ClientIdScheme::PreRegistered => wallet.preregistered(&request, jwt).await?,
-                ClientIdScheme::VerifierAttestation => {
-                    wallet.verifier_attestation(&request, jwt).await?
+            let client_id_scheme = request.client_id().resolve_scheme();
+            if let Some(client_id_scheme) = client_id_scheme {
+                match client_id_scheme {
+                    ClientIdScheme::Did => wallet.did(&request, jwt).await?,
+                    ClientIdScheme::EntityId => wallet.entity_id(&request, jwt).await?,
+                    ClientIdScheme::Https => wallet.entity_id(&request, jwt).await?,
+                    ClientIdScheme::Preregistered => wallet.preregistered(&request, jwt).await?,
+                    ClientIdScheme::RedirectUri => wallet.redirect_uri(&request, jwt).await?,
+                    ClientIdScheme::VerifierAttestation => {
+                        wallet.verifier_attestation(&request, jwt).await?
+                    }
+                    ClientIdScheme::WebOrigin => wallet.web_origin(&request, jwt).await?,
+                    ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
+                    ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
+                    ClientIdScheme::Other(scheme) => {
+                        wallet.other(scheme.as_str(), &request, jwt).await?
+                    }
                 }
-                ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
-                ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
-                ClientIdScheme::Other(scheme) => wallet.other(scheme, &request, jwt).await?,
-                _ => {}
-            };
+            } else {
+                return Err(Error::protocol(
+                    ClientIDSchemeNotGiven,
+                    "The client_id_scheme is required",
+                    None,
+                ));
+            }
 
             request
         }
@@ -200,24 +228,27 @@ where
     let state = request.state();
     let wallet_metadata = wallet.metadata();
 
-    let client_id_scheme = request.client_id_scheme();
-    if !wallet_metadata
-        .get_or_default::<ClientIdSchemesSupported>()?
-        .0
-        .contains(client_id_scheme)
-    {
-        return Err(Error::protocol_invalid_req(
-            &format!(
-                "wallet does not support client_id_scheme '{}'",
-                client_id_scheme
-            ),
-            state.clone(),
-        ));
+    let client_id_scheme = request.client_id().resolve_scheme();
+
+    if let Some(client_id_scheme) = client_id_scheme {
+        if !wallet_metadata
+            .get_or_default::<ClientIdSchemesSupported>()?
+            .0
+            .contains(&client_id_scheme)
+        {
+            return Err(Error::protocol_invalid_req(
+                &format!(
+                    "wallet does not support client_id_scheme '{}'",
+                    String::from(client_id_scheme)
+                ),
+                state.clone(),
+            ));
+        }
     }
 
     validate_response_type(request, wallet_metadata)?;
 
-    let client_metadata = ClientMetadata::resolve(request, wallet.http_client()).await?;
+    let client_metadata = ClientMetadata::resolve(request).await?;
     validate_vp_formats(&client_metadata, wallet_metadata, state.clone())?;
 
     let response_mode = request.get::<ResponseMode>().parsing_error()?;

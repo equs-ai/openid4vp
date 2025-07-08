@@ -1,40 +1,43 @@
 use super::AuthorizationRequestObject;
-use crate::core::util::http::{create_get_request, AsyncHttpClient, MIME_TYPE_JSON};
 use crate::core::{
     metadata::parameters::verifier::{
         AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
         AuthorizationSignedResponseAlg, JWKs, VpFormats,
     },
-    object::{ParsingErrorContext, TypedParameter, UntypedObject},
+    object::{TypedParameter, UntypedObject},
 };
 use crate::utils::from_string_or_value;
-use anyhow::{anyhow, bail, Context, Error, Ok};
+use anyhow::{anyhow, bail, Error, Ok};
+use base64::engine::general_purpose;
+use base64::Engine;
+use p256::elliptic_curve::rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::{fmt, ops::Deref};
 use url::Url;
 
-const DID: &str = "did";
-const ENTITY_ID: &str = "entity_id";
-const PREREGISTERED: &str = "pre-registered";
-const REDIRECT_URI: &str = "redirect_uri";
-const VERIFIER_ATTESTATION: &str = "verifier_attestation";
-const X509_SAN_DNS: &str = "x509_san_dns";
-const X509_SAN_URI: &str = "x509_san_uri";
+pub const DID: &str = "did";
+/// Deprecated, use `https` instead.
+pub const ENTITY_ID: &str = "entity_id";
+pub const HTTPS: &str = "https";
+pub const PREREGISTERED: &str = "pre-registered";
+pub const REDIRECT_URI: &str = "redirect_uri";
+pub const VERIFIER_ATTESTATION: &str = "verifier_attestation";
+pub const WEB_ORIGIN: &str = "web-origin";
+pub const X509_SAN_DNS: &str = "x509_san_dns";
+pub const X509_SAN_URI: &str = "x509_san_uri";
 
 #[derive(Debug, Clone)]
 pub struct ClientId(pub String);
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ClientIdScheme {
-    Did,
-    EntityId,
-    PreRegistered,
-    RedirectUri,
-    VerifierAttestation,
-    X509SanDns,
-    X509SanUri,
-    Other(String),
+impl ClientId {
+    /// If the `client_id_scheme` is not present, it will be inferred from the `client_id`.
+    pub fn resolve_scheme(&self) -> Option<ClientIdScheme> {
+        self.0
+            .split(':')
+            .next()
+            .map(|r| ClientIdScheme::from(r.to_string()))
+    }
 }
 
 impl TypedParameter for ClientId {
@@ -55,21 +58,49 @@ impl From<ClientId> for Json {
     }
 }
 
-impl TypedParameter for ClientIdScheme {
-    const KEY: &'static str = "client_id_scheme";
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClientIdScheme {
+    Did,
+    EntityId,
+    Https,
+    Preregistered,
+    RedirectUri,
+    VerifierAttestation,
+    WebOrigin,
+    X509SanDns,
+    X509SanUri,
+    Other(String),
 }
 
 impl From<String> for ClientIdScheme {
-    fn from(s: String) -> Self {
-        match s.as_str() {
+    fn from(value: String) -> Self {
+        match value.as_str() {
             DID => ClientIdScheme::Did,
             ENTITY_ID => ClientIdScheme::EntityId,
-            PREREGISTERED => ClientIdScheme::PreRegistered,
+            HTTPS => ClientIdScheme::Https,
+            PREREGISTERED => ClientIdScheme::Preregistered,
             REDIRECT_URI => ClientIdScheme::RedirectUri,
             VERIFIER_ATTESTATION => ClientIdScheme::VerifierAttestation,
+            WEB_ORIGIN => ClientIdScheme::WebOrigin,
             X509_SAN_DNS => ClientIdScheme::X509SanDns,
             X509_SAN_URI => ClientIdScheme::X509SanUri,
-            _ => ClientIdScheme::Other(s),
+            _ => ClientIdScheme::Other(value),
+        }
+    }
+}
+impl From<ClientIdScheme> for String {
+    fn from(value: ClientIdScheme) -> Self {
+        match value {
+            ClientIdScheme::Did => DID.to_string(),
+            ClientIdScheme::EntityId => ENTITY_ID.to_string(),
+            ClientIdScheme::Https => HTTPS.to_string(),
+            ClientIdScheme::Preregistered => PREREGISTERED.to_string(),
+            ClientIdScheme::RedirectUri => REDIRECT_URI.to_string(),
+            ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION.to_string(),
+            ClientIdScheme::WebOrigin => WEB_ORIGIN.to_string(),
+            ClientIdScheme::X509SanDns => X509_SAN_DNS.to_string(),
+            ClientIdScheme::X509SanUri => X509_SAN_URI.to_string(),
+            ClientIdScheme::Other(s) => s,
         }
     }
 }
@@ -86,24 +117,31 @@ impl TryFrom<Json> for ClientIdScheme {
 
 impl From<ClientIdScheme> for Json {
     fn from(value: ClientIdScheme) -> Self {
-        Json::String(value.to_string())
+        Json::String(String::from(value))
+    }
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransactionData(pub Vec<String>);
+
+impl TryFrom<Json> for TransactionData {
+    type Error = Error;
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(Self(serde_json::from_value(value)?))
     }
 }
 
-impl fmt::Display for ClientIdScheme {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ClientIdScheme::Did => DID,
-            ClientIdScheme::EntityId => ENTITY_ID,
-            ClientIdScheme::PreRegistered => PREREGISTERED,
-            ClientIdScheme::RedirectUri => REDIRECT_URI,
-            ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION,
-            ClientIdScheme::X509SanDns => X509_SAN_DNS,
-            ClientIdScheme::X509SanUri => X509_SAN_URI,
-            ClientIdScheme::Other(o) => o,
-        }
-        .fmt(f)
+impl From<TransactionData> for Json {
+    fn from(value: TransactionData) -> Self {
+        Json::Array(value.0.into_iter().map(Json::String).collect())
     }
+}
+impl TypedParameter for TransactionData {
+    const KEY: &'static str = "transaction_data";
+}
+pub struct TransactionDataItem {
+    pub type_: String,
+    pub credential_ids: Vec<String>,
+    pub transaction_data_hashes_alg: Option<Vec<String>>,
 }
 
 /// `client_metadata` field in the Authorization Request.
@@ -148,32 +186,11 @@ impl TryFrom<Json> for ClientMetadata {
 impl ClientMetadata {
     /// Resolves the client metadata from the Authorization Request Object.
     ///
-    /// If the client metadata is not passed by reference or value if the Authorization Request Object,
-    /// then this function will return an error.
-    pub async fn resolve<H: AsyncHttpClient>(
-        request: &AuthorizationRequestObject,
-        http_client: &H,
-    ) -> Result<Self, Error> {
+    /// If the client metadata is not passed correctly then this function will return an error.
+    /// or if not passed, then it returns an empty metadata.
+    pub async fn resolve(request: &AuthorizationRequestObject) -> Result<Self, Error> {
         if let Some(metadata) = request.get() {
             return metadata;
-        }
-
-        if let Some(metadata_uri) = request.get::<ClientMetadataUri>() {
-            let uri = metadata_uri.parsing_error()?;
-
-            let resp = http_client
-                .execute(create_get_request(&uri.0, MIME_TYPE_JSON)?)
-                .await?;
-
-            if !resp.status().is_success() {
-                bail!(format!(
-                    "failed to get client metadata: status_code={}, response_body={}",
-                    resp.status().as_u16(),
-                    String::from_utf8(resp.body().to_owned()).unwrap_or("".to_owned())
-                ));
-            }
-
-            serde_json::from_slice(resp.body()).context("could not parse ClientMetadata")?
         }
 
         tracing::warn!("the client metadata was not passed by reference or value");
@@ -292,28 +309,6 @@ impl ClientMetadata {
     }
 }
 
-/// `client_metadata_uri` field in the Authorization Request.
-#[derive(Debug, Clone)]
-pub struct ClientMetadataUri(pub Url);
-
-impl TypedParameter for ClientMetadataUri {
-    const KEY: &'static str = "client_metadata_uri";
-}
-
-impl From<ClientMetadataUri> for Json {
-    fn from(cmu: ClientMetadataUri) -> Self {
-        cmu.0.to_string().into()
-    }
-}
-
-impl TryFrom<Json> for ClientMetadataUri {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(serde_json::from_value(value).map(ClientMetadataUri)?)
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Nonce(String);
 
@@ -372,6 +367,38 @@ impl TryFrom<Json> for Nonce {
 
 impl From<Nonce> for Json {
     fn from(value: Nonce) -> Self {
+        Json::String(value.0)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalletNonce(pub String);
+impl WalletNonce {
+    /// Crate a new `WalletNonce` with a random value. base-64 encoded.
+
+    pub fn random() -> Self {
+        let mut nonce_bytes = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        // Encode as base64url (URL-safe base64 without padding)
+        let encoded = general_purpose::URL_SAFE_NO_PAD.encode(nonce_bytes);
+        Self(encoded)
+    }
+}
+
+impl TypedParameter for WalletNonce {
+    const KEY: &'static str = "wallet_nonce";
+}
+
+impl TryFrom<Json> for WalletNonce {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(Self(serde_json::from_value(value)?))
+    }
+}
+
+impl From<WalletNonce> for Json {
+    fn from(value: WalletNonce) -> Self {
         Json::String(value.0)
     }
 }
@@ -690,6 +717,35 @@ impl TryFrom<Json> for IdTokenType {
 impl From<IdTokenType> for Json {
     fn from(idt: IdTokenType) -> Self {
         Json::String(idt.into())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum HttpMethodForAuth {
+    GET,
+    POST,
+}
+
+impl TryFrom<String> for HttpMethodForAuth {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "get" => Ok(HttpMethodForAuth::GET),
+            "post" => Ok(HttpMethodForAuth::POST),
+            _ => Err(anyhow::anyhow!(
+                "Error parsing http method for Auth".to_string()
+            )),
+        }
+    }
+}
+
+impl From<HttpMethodForAuth> for String {
+    fn from(value: HttpMethodForAuth) -> String {
+        match value {
+            HttpMethodForAuth::GET => String::from("get"),
+            HttpMethodForAuth::POST => String::from("post"),
+        }
     }
 }
 

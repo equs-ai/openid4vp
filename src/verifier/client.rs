@@ -25,7 +25,7 @@ use crate::utils::{generate_jwt, WasmNotSync};
 pub trait Client: Debug {
     fn id(&self) -> &ClientId;
 
-    fn scheme(&self) -> &ClientIdScheme;
+    fn scheme(&self) -> ClientIdScheme;
 
     async fn generate_request_object_jwt(
         &self,
@@ -128,6 +128,15 @@ pub enum X509SanVariant {
     Dns,
 }
 
+impl X509SanVariant {
+    pub fn to_scheme(&self) -> ClientIdScheme {
+        match self {
+            X509SanVariant::Uri => ClientIdScheme::X509SanUri,
+            X509SanVariant::Dns => ClientIdScheme::X509SanDns,
+        }
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl<S: Signer + WasmNotSync> Client for DIDClient<S> {
@@ -135,8 +144,8 @@ impl<S: Signer + WasmNotSync> Client for DIDClient<S> {
         &self.id
     }
 
-    fn scheme(&self) -> &ClientIdScheme {
-        &ClientIdScheme::Did
+    fn scheme(&self) -> ClientIdScheme {
+        ClientIdScheme::Did
     }
 
     async fn generate_request_object_jwt(
@@ -163,10 +172,10 @@ impl Client for X509SanClient {
         &self.id
     }
 
-    fn scheme(&self) -> &ClientIdScheme {
+    fn scheme(&self) -> ClientIdScheme {
         match self.variant {
-            X509SanVariant::Dns => &ClientIdScheme::X509SanDns,
-            X509SanVariant::Uri => &ClientIdScheme::X509SanUri,
+            X509SanVariant::Dns => ClientIdScheme::X509SanDns,
+            X509SanVariant::Uri => ClientIdScheme::X509SanUri,
         }
     }
 
@@ -211,8 +220,8 @@ impl Client for RedirectUriClient {
         &self.id
     }
 
-    fn scheme(&self) -> &ClientIdScheme {
-        &ClientIdScheme::RedirectUri
+    fn scheme(&self) -> ClientIdScheme {
+        ClientIdScheme::RedirectUri
     }
 
     async fn generate_request_object_jwt(&self, _: &AuthorizationRequestObject) -> Result<String> {
