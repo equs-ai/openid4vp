@@ -5,6 +5,7 @@ use anyhow::anyhow;
 use http::Response;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
+use url::form_urlencoded::byte_serialize;
 use url::Url;
 
 use crate::wallet::Wallet;
@@ -596,23 +597,14 @@ impl SignedAuthorizationRequest {
                 .await
                 .map_err(|e| Error::Internal(anyhow!(e)))?,
             HttpMethodForAuth::POST => {
-                let mut body = HashMap::<String, String>::new();
-                let metadata = wallet.metadata();
-                let encoded = url_encode_wallet_metadata(&metadata)?;
-                body.insert(
-                    "wallet_metadata".to_string(),
-                    encoded,
-                );
+                let encoded_metadata: String = serde_json::to_string(&wallet.metadata())
+                    .map_err(|e| Error::Internal(e.into()))
+                    .map(|v| byte_serialize(v.as_bytes()).collect())?;
+                let mut body = format!("wallet_metadata={}", encoded_metadata);
                 if let Ok(Some(nonce)) = wallet.generate_nonce().await {
-                    body.insert(
-                        "wallet_nonce".to_string(),
-                        serde_urlencoded::to_string(nonce)
-                            .map_err(|e| Error::Internal(anyhow!(e)))?,
-                    );
+                    body = format!("{}&wallet_nonce={}", body, nonce.0);
                 }
-                let body_as_bytes = serde_urlencoded::to_string(body)
-                    .map_err(|e| Error::Internal(anyhow!(e)))?
-                    .into_bytes();
+                let body_as_bytes = body.as_bytes().to_vec();
                 wallet
                     .http_client()
                     .execute(create_post_request(
