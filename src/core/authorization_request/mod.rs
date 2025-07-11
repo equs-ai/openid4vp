@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use anyhow::anyhow;
@@ -25,7 +24,6 @@ use crate::core::error::ErrorType::{
     InvalidPresentationDefinitionUri,
 };
 use crate::core::error::{Error, ErrorType};
-use crate::core::metadata::url_encode_wallet_metadata;
 use crate::core::presentation_definition::PresentationDefinition;
 use crate::core::util::http::{
     create_get_request, create_post_request, AsyncHttpClient, MIME_TYPE_FORM_URLENCODED,
@@ -382,7 +380,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             response_uri,
             value.get_or_default::<ResponseMode>()?,
         ) {
-            (Some(uri), None, mode @ ResponseMode::Fragment | mode @ ResponseMode::FragmentJwt) => {
+            (Some(uri), None, mode @ ResponseMode::DcApi | mode @ ResponseMode::DcApiJwt) => {
                 (
                     uri.parsing_error()
                         .map_err(|e| {
@@ -434,7 +432,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
                     state.clone(),
                 ))
             }
-            (None, _, mode @ ResponseMode::Fragment | mode @ ResponseMode::FragmentJwt) => {
+            (None, _, mode @ ResponseMode::DcApi | mode @ ResponseMode::DcApiJwt) => {
                 return Err(Error::protocol_invalid_req(
                     &format!(
                         "'redirect_uri' is required for this '{}' response mode",
@@ -726,7 +724,7 @@ mod tests {
             "policy_uri": "https://verifier.example.org/privacy",
             "client_uri": "https://verifier.example.org"
           },
-          "response_mode": "fragment",
+          "response_mode": "dc_api",
           "exp": 1685694443,
           "iat": 1685693443
         }))
@@ -751,7 +749,7 @@ mod tests {
                 "policy_uri": "https://verifier.example.org/privacy",
                 "client_uri": "https://verifier.example.org"
               },
-              "response_mode": "fragment",
+              "response_mode": "dc_api",
               "exp": 1685694443,
               "iat": 1685693443
         }))
@@ -894,7 +892,7 @@ mod tests {
                 "policy_uri": "https://verifier.example.org/privacy",
                 "client_uri": "https://verifier.example.org"
               },
-              "response_mode": "fragment",
+              "response_mode": "dc_api",
               "exp": 1685694443,
               "iat": 1685693443
         }))

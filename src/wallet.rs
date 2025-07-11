@@ -84,7 +84,7 @@ pub trait Wallet: RequestVerifier + WasmNotSync {
                     MIME_TYPE_JSON,
                 )?
             }
-            ResponseMode::Fragment | ResponseMode::FragmentJwt => {
+            ResponseMode::DcApi | ResponseMode::DcApiJwt => {
                 let AuthorizationResponse::Unencoded(un_encoded) = response else {
                     return Err(Error::internal(anyhow!(
                         "unexpected AuthorizationResponse format"
