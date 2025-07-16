@@ -38,6 +38,19 @@ impl ClientId {
             .next()
             .map(|r| ClientIdScheme::from(r.to_string()))
     }
+
+    pub fn get_id(&self) -> Result<String, Error> {
+        if self.0.starts_with("did:") || self.0.starts_with("https:") {
+            return Ok(self.0.clone());
+        }
+        let parts: Vec<&str> = self.0.splitn(2,':').collect();
+        if parts.len() == 2 {
+            Ok(parts[1].to_string())
+        } else {
+           Err(anyhow!(format!("Error parsing client_id: {}", self.0.clone())))
+        }
+
+    }
 }
 
 impl TypedParameter for ClientId {
@@ -751,11 +764,44 @@ impl From<HttpMethodForAuth> for String {
 
 #[cfg(test)]
 mod test {
+    use rstest::rstest;
     use crate::core::authorization_request::ResolvedPresentationQuery;
     use serde_json::json;
-
+    use crate::core::authorization_request::parameters::{ClientId, ClientIdScheme};
     use crate::core::dcql::DcqlCredential;
+    #[rstest]
+    #[case("redirect_uri:https://client.example.org/cb", "redirect_uri", "https://client.example.org/cb")]
+    #[case("did:web:someid", "did", "did:web:someid")]
+    #[case("x509_san_dns:client.example.org", "x509_san_dns", "client.example.org")]
+    #[case("https://client.example.org/cb", "https", "https://client.example.org/cb")]
+    #[case("verifier_attestation:example-client", "verifier_attestation", "example-client")]
+    fn test_client_id_scheme_parsing_successfully(
+        #[case] client_id: String,
+        #[case] scheme: String,
+        #[case] id: &str,
+    ) {
+        let client_id = ClientId(client_id);
+        
+        assert_eq!(ClientIdScheme::from(scheme), client_id.resolve_scheme().unwrap());
+        assert_eq!(id, client_id.get_id().unwrap());
+    }
+    
+    #[rstest]
+    #[case("https//verifier.com")]
+    fn client_id_scheme_parsing_successfully_for_other(#[case] id: String) {
+        let client_id = ClientId(id.clone());
+        assert_eq!(ClientIdScheme::from(id), client_id.resolve_scheme().unwrap());
+    }
 
+    #[rstest]
+    #[case("https//verifier.com")]
+    #[should_panic]
+    fn client_id_parsing_unsuccessfully(#[case] id: String) {
+        let client_id = ClientId(id.clone());
+        let id = client_id.get_id().unwrap();
+    }
+    
+    
     #[test]
     fn test() {
         serde_json::from_value::<DcqlCredential>(json!(

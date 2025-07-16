@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use anyhow::anyhow;
@@ -25,7 +24,6 @@ use crate::core::error::ErrorType::{
     InvalidPresentationDefinitionUri,
 };
 use crate::core::error::{Error, ErrorType};
-use crate::core::metadata::url_encode_wallet_metadata;
 use crate::core::presentation_definition::PresentationDefinition;
 use crate::core::util::http::{
     create_get_request, create_post_request, AsyncHttpClient, MIME_TYPE_FORM_URLENCODED,

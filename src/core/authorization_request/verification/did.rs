@@ -72,7 +72,7 @@ pub async fn verify_with_resolver(
         )
     })?;
 
-    if client_id.0 != did {
+    if client_id.get_id()? != did {
         return Err(Error::protocol_access_denied(
             &format!(
                 "DIDs from 'kid' ({did}) and 'client_id' ({}) do not match",
