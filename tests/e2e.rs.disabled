@@ -18,6 +18,7 @@ mod jwt_vc;
 mod jwt_vp;
 
 #[tokio::test]
+#[ignore]
 async fn w3c_vc_did_client_direct_post() {
     let (wallet, verifier) = jwt_vc::wallet_verifier().await;
 
