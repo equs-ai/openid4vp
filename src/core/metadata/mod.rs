@@ -241,17 +241,19 @@ impl DerefMut for WalletMetadata {
     }
 }
 
-
 pub fn url_encode_wallet_metadata(metadata: &WalletMetadata) -> Result<String> {
     let json_value = serde_json::to_value(metadata)
         .map_err(|err| anyhow::anyhow!("failed to serialize wallet metadata: {}", err))?;
     let map = match json_value {
         Value::Object(map) => map,
-        _ => return Err(anyhow::anyhow!("failed to serialize wallet metadata: Expected an object")),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "failed to serialize wallet metadata: Expected an object"
+            ))
+        }
     };
-    let flat_map: HashMap<String, String> = map.into_iter()
-        .map(|(k,v)| (k,v.to_string()))
-        .collect();
+    let flat_map: HashMap<String, String> =
+        map.into_iter().map(|(k, v)| (k, v.to_string())).collect();
 
     serde_urlencoded::to_string(&flat_map)
         .map_err(|err| anyhow::anyhow!("failed to url encode wallet metadata: {}", err))
@@ -260,13 +262,15 @@ pub fn url_encode_wallet_metadata(metadata: &WalletMetadata) -> Result<String> {
 pub fn url_decode_wallet_metadata(metadata: String) -> Result<WalletMetadata> {
     let flat_map: HashMap<String, String> = serde_urlencoded::from_str(metadata.as_str())?;
     let json_map: Map<String, Value> = flat_map
-    .into_iter()
-    .map(|(k, v)| {
-        let val = serde_json::from_str(&v).unwrap_or(Value::String(v));
-        (k, val)
-    }).collect();
+        .into_iter()
+        .map(|(k, v)| {
+            let val = serde_json::from_str(&v).unwrap_or(Value::String(v));
+            (k, val)
+        })
+        .collect();
     let json_value = Value::Object(json_map);
-    serde_json::from_value(json_value).map_err(|err| anyhow::anyhow!("failed to decode wallet metadata: {}", err))
+    serde_json::from_value(json_value)
+        .map_err(|err| anyhow::anyhow!("failed to decode wallet metadata: {}", err))
 }
 
 #[cfg(test)]

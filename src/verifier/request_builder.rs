@@ -2,9 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use url::Url;
 
 use super::Verifier;
-use crate::core::authorization_request::parameters::{
-    ClientMetadata, RedirectUri, ResponseUri,
-};
+use crate::core::authorization_request::parameters::{ClientMetadata, RedirectUri, ResponseUri};
 use crate::core::authorization_request::SignedAuthorizationRequest;
 use crate::core::dcql::DCQL;
 use crate::core::error::{Error, ErrorType};
@@ -170,7 +168,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
                     ByReference::True(rr) => RequestIndirection::ByReference(rr),
                 };
                 let signed_auth_req = SignedAuthorizationRequest {
-                    client_id: client_id.0.clone(),
+                    client_id: client_id.get_full_id(),
                     request_indirection,
                 };
 

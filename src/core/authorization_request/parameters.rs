@@ -28,28 +28,61 @@ pub const X509_SAN_DNS: &str = "x509_san_dns";
 pub const X509_SAN_URI: &str = "x509_san_uri";
 
 #[derive(Debug, Clone)]
-pub struct ClientId(pub String);
+pub struct ClientId {
+    id: String,
+    scheme: ClientIdScheme,
+}
 
 impl ClientId {
-    /// If the `client_id_scheme` is not present, it will be inferred from the `client_id`.
-    pub fn resolve_scheme(&self) -> Option<ClientIdScheme> {
-        self.0
-            .split(':')
-            .next()
-            .map(|r| ClientIdScheme::from(r.to_string()))
+    pub fn new(client_id: String) -> Result<Self, Error> {
+        if client_id.is_empty() {
+            return Err(anyhow!("Client ID cannot be empty."));
+        }
+        let parts = client_id.splitn(2, ':').collect::<Vec<_>>();
+        if parts.is_empty() || parts.len() > 2 {
+            return Err(anyhow!("Error while parsing client id: {}", client_id));
+        }
+        if parts.len() == 1 {
+            return Ok(Self {
+                id: parts[0].to_string(),
+                scheme: ClientIdScheme::Preregistered,
+            });
+        }
+
+        let scheme = ClientIdScheme::try_from(parts[0].to_string())?;
+        let id = match scheme {
+            ClientIdScheme::Did | ClientIdScheme::Https => client_id.clone(),
+            ClientIdScheme::Preregistered
+            | ClientIdScheme::RedirectUri
+            | ClientIdScheme::X509SanDns
+            | ClientIdScheme::EntityId
+            | ClientIdScheme::WebOrigin
+            | ClientIdScheme::VerifierAttestation
+            | ClientIdScheme::X509SanUri => parts[1].to_string(),
+        };
+        Ok(Self { id, scheme })
+    }
+    pub fn get_scheme(&self) -> ClientIdScheme {
+        self.scheme.clone()
     }
 
-    pub fn get_id(&self) -> Result<String, Error> {
-        if self.0.starts_with("did:") || self.0.starts_with("https:") {
-            return Ok(self.0.clone());
-        }
-        let parts: Vec<&str> = self.0.splitn(2,':').collect();
-        if parts.len() == 2 {
-            Ok(parts[1].to_string())
-        } else {
-           Err(anyhow!(format!("Error parsing client_id: {}", self.0.clone())))
-        }
+    pub fn get_id(&self) -> String {
+        self.id.clone()
+    }
 
+    pub fn get_full_id(&self) -> String {
+        match self.scheme {
+            ClientIdScheme::Did | ClientIdScheme::EntityId => self.id.clone(),
+            ClientIdScheme::Https
+            | ClientIdScheme::Preregistered
+            | ClientIdScheme::RedirectUri
+            | ClientIdScheme::VerifierAttestation
+            | ClientIdScheme::WebOrigin
+            | ClientIdScheme::X509SanDns
+            | ClientIdScheme::X509SanUri => {
+                format!("{}:{}", String::from(self.scheme.clone()), self.id.clone())
+            }
+        }
     }
 }
 
@@ -61,13 +94,13 @@ impl TryFrom<Json> for ClientId {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(Self(serde_json::from_value(value)?))
+        Self::new(serde_json::from_value(value)?)
     }
 }
 
 impl From<ClientId> for Json {
     fn from(value: ClientId) -> Self {
-        Json::String(value.0)
+        Json::String(value.get_full_id())
     }
 }
 
@@ -82,22 +115,25 @@ pub enum ClientIdScheme {
     WebOrigin,
     X509SanDns,
     X509SanUri,
-    Other(String),
 }
 
-impl From<String> for ClientIdScheme {
-    fn from(value: String) -> Self {
+impl TryFrom<String> for ClientIdScheme {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.as_str() {
-            DID => ClientIdScheme::Did,
-            ENTITY_ID => ClientIdScheme::EntityId,
-            HTTPS => ClientIdScheme::Https,
-            PREREGISTERED => ClientIdScheme::Preregistered,
-            REDIRECT_URI => ClientIdScheme::RedirectUri,
-            VERIFIER_ATTESTATION => ClientIdScheme::VerifierAttestation,
-            WEB_ORIGIN => ClientIdScheme::WebOrigin,
-            X509_SAN_DNS => ClientIdScheme::X509SanDns,
-            X509_SAN_URI => ClientIdScheme::X509SanUri,
-            _ => ClientIdScheme::Other(value),
+            DID => Ok(ClientIdScheme::Did),
+            ENTITY_ID => Ok(ClientIdScheme::EntityId),
+            HTTPS => Ok(ClientIdScheme::Https),
+            PREREGISTERED => Ok(ClientIdScheme::Preregistered),
+            REDIRECT_URI => Ok(ClientIdScheme::RedirectUri),
+            VERIFIER_ATTESTATION => Ok(ClientIdScheme::VerifierAttestation),
+            WEB_ORIGIN => Ok(ClientIdScheme::WebOrigin),
+            X509_SAN_DNS => Ok(ClientIdScheme::X509SanDns),
+            X509_SAN_URI => Ok(ClientIdScheme::X509SanUri),
+            _ => Err(anyhow!(
+                "Given client id scheme is not supported: {}",
+                value
+            )),
         }
     }
 }
@@ -113,7 +149,6 @@ impl From<ClientIdScheme> for String {
             ClientIdScheme::WebOrigin => WEB_ORIGIN.to_string(),
             ClientIdScheme::X509SanDns => X509_SAN_DNS.to_string(),
             ClientIdScheme::X509SanUri => X509_SAN_URI.to_string(),
-            ClientIdScheme::Other(s) => s,
         }
     }
 }
@@ -123,7 +158,7 @@ impl TryFrom<Json> for ClientIdScheme {
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
         serde_json::from_value(value)
-            .map(String::into)
+            .map(String::try_into)?
             .map_err(Error::from)
     }
 }
@@ -764,44 +799,61 @@ impl From<HttpMethodForAuth> for String {
 
 #[cfg(test)]
 mod test {
-    use rstest::rstest;
-    use crate::core::authorization_request::ResolvedPresentationQuery;
-    use serde_json::json;
     use crate::core::authorization_request::parameters::{ClientId, ClientIdScheme};
+    use crate::core::authorization_request::ResolvedPresentationQuery;
     use crate::core::dcql::DcqlCredential;
+    use rstest::rstest;
+    use serde_json::json;
     #[rstest]
-    #[case("redirect_uri:https://client.example.org/cb", "redirect_uri", "https://client.example.org/cb")]
+    #[case(
+        "redirect_uri:https://client.example.org/cb",
+        "redirect_uri",
+        "https://client.example.org/cb"
+    )]
     #[case("did:web:someid", "did", "did:web:someid")]
-    #[case("x509_san_dns:client.example.org", "x509_san_dns", "client.example.org")]
-    #[case("https://client.example.org/cb", "https", "https://client.example.org/cb")]
-    #[case("verifier_attestation:example-client", "verifier_attestation", "example-client")]
+    #[case(
+        "x509_san_dns:client.example.org",
+        "x509_san_dns",
+        "client.example.org"
+    )]
+    #[case(
+        "https://client.example.org/cb",
+        "https",
+        "https://client.example.org/cb"
+    )]
+    #[case(
+        "verifier_attestation:example-client",
+        "verifier_attestation",
+        "example-client"
+    )]
     fn test_client_id_scheme_parsing_successfully(
         #[case] client_id: String,
         #[case] scheme: String,
         #[case] id: &str,
     ) {
-        let client_id = ClientId(client_id);
-        
-        assert_eq!(ClientIdScheme::from(scheme), client_id.resolve_scheme().unwrap());
-        assert_eq!(id, client_id.get_id().unwrap());
-    }
-    
-    #[rstest]
-    #[case("https//verifier.com")]
-    fn client_id_scheme_parsing_successfully_for_other(#[case] id: String) {
-        let client_id = ClientId(id.clone());
-        assert_eq!(ClientIdScheme::from(id), client_id.resolve_scheme().unwrap());
+        let client_id = ClientId::new(client_id).unwrap();
+
+        assert_eq!(
+            ClientIdScheme::try_from(scheme).unwrap(),
+            client_id.get_scheme()
+        );
+        assert_eq!(id, client_id.get_id());
     }
 
     #[rstest]
     #[case("https//verifier.com")]
+    fn client_id_scheme_parsing_successfully_for_preregistered(#[case] id: String) {
+        let client_id = ClientId::new(id.clone()).unwrap();
+        assert_eq!(ClientIdScheme::Preregistered, client_id.get_scheme());
+    }
+
+    #[rstest]
+    #[case("")]
     #[should_panic]
     fn client_id_parsing_unsuccessfully(#[case] id: String) {
-        let client_id = ClientId(id.clone());
-        let id = client_id.get_id().unwrap();
+        ClientId::new(id.clone()).unwrap();
     }
-    
-    
+
     #[test]
     fn test() {
         serde_json::from_value::<DcqlCredential>(json!(

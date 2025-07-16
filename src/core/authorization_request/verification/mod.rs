@@ -4,7 +4,6 @@ use super::{
 };
 use crate::core::authorization_request::parameters::ResponseType;
 use crate::core::error::Error;
-use crate::core::error::ErrorType::ClientIDSchemeNotGiven;
 use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
 use crate::core::metadata::WalletMetadata;
 use crate::core::{
@@ -141,20 +140,6 @@ pub trait RequestVerifier {
             state.clone(),
         ))
     }
-
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is any other value.
-    async fn other(
-        &self,
-        client_id_scheme: &str,
-        decoded_request: &AuthorizationRequestObject,
-        link: String,
-    ) -> Result<(), Error> {
-        let state = decoded_request.state();
-        Err(Error::protocol_access_denied(
-            "'other' client verification is not supported",
-            state.clone(),
-        ))
-    }
 }
 
 pub(crate) async fn verify_request<W>(
@@ -183,30 +168,18 @@ where
                     })?
                     .try_into()?;
 
-            let client_id_scheme = request.client_id().resolve_scheme();
-            if let Some(client_id_scheme) = client_id_scheme {
-                match client_id_scheme {
-                    ClientIdScheme::Did => wallet.did(&request, jwt).await?,
-                    ClientIdScheme::EntityId => wallet.entity_id(&request, jwt).await?,
-                    ClientIdScheme::Https => wallet.entity_id(&request, jwt).await?,
-                    ClientIdScheme::Preregistered => wallet.preregistered(&request, jwt).await?,
-                    ClientIdScheme::RedirectUri => wallet.redirect_uri(&request, jwt).await?,
-                    ClientIdScheme::VerifierAttestation => {
-                        wallet.verifier_attestation(&request, jwt).await?
-                    }
-                    ClientIdScheme::WebOrigin => wallet.web_origin(&request, jwt).await?,
-                    ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
-                    ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
-                    ClientIdScheme::Other(scheme) => {
-                        wallet.other(scheme.as_str(), &request, jwt).await?
-                    }
+            match request.client_id().get_scheme() {
+                ClientIdScheme::Did => wallet.did(&request, jwt).await?,
+                ClientIdScheme::EntityId => wallet.entity_id(&request, jwt).await?,
+                ClientIdScheme::Https => wallet.entity_id(&request, jwt).await?,
+                ClientIdScheme::Preregistered => wallet.preregistered(&request, jwt).await?,
+                ClientIdScheme::RedirectUri => wallet.redirect_uri(&request, jwt).await?,
+                ClientIdScheme::VerifierAttestation => {
+                    wallet.verifier_attestation(&request, jwt).await?
                 }
-            } else {
-                return Err(Error::protocol(
-                    ClientIDSchemeNotGiven,
-                    "The client_id_scheme is required",
-                    None,
-                ));
+                ClientIdScheme::WebOrigin => wallet.web_origin(&request, jwt).await?,
+                ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
+                ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
             }
 
             request
@@ -228,22 +201,19 @@ where
     let state = request.state();
     let wallet_metadata = wallet.metadata();
 
-    let client_id_scheme = request.client_id().resolve_scheme();
-
-    if let Some(client_id_scheme) = client_id_scheme {
-        if !wallet_metadata
-            .get_or_default::<ClientIdSchemesSupported>()?
-            .0
-            .contains(&client_id_scheme)
-        {
-            return Err(Error::protocol_invalid_req(
-                &format!(
-                    "wallet does not support client_id_scheme '{}'",
-                    String::from(client_id_scheme)
-                ),
-                state.clone(),
-            ));
-        }
+    let client_id_scheme = request.client_id().get_scheme();
+    if !wallet_metadata
+        .get_or_default::<ClientIdSchemesSupported>()?
+        .0
+        .contains(&client_id_scheme)
+    {
+        return Err(Error::protocol_invalid_req(
+            &format!(
+                "wallet does not support client_id_scheme '{}'",
+                String::from(client_id_scheme)
+            ),
+            state.clone(),
+        ));
     }
 
     validate_response_type(request, wallet_metadata)?;
