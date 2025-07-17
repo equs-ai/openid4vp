@@ -168,7 +168,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
                     ByReference::True(rr) => RequestIndirection::ByReference(rr),
                 };
                 let signed_auth_req = SignedAuthorizationRequest {
-                    client_id: client_id.get_full_id(),
+                    client_id: client_id.get_full_id().to_owned(),
                     request_indirection,
                 };
 

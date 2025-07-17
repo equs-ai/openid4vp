@@ -210,7 +210,7 @@ where
         return Err(Error::protocol_invalid_req(
             &format!(
                 "wallet does not support client_id_scheme '{}'",
-                String::from(client_id_scheme)
+                client_id_scheme.to_string()
             ),
             state.clone(),
         ));

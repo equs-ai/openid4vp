@@ -14,6 +14,7 @@ use p256::elliptic_curve::rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::{fmt, ops::Deref};
+use strum_macros::Display;
 use url::Url;
 
 pub const DID: &str = "did";
@@ -62,17 +63,17 @@ impl ClientId {
         };
         Ok(Self { id, scheme })
     }
-    pub fn get_scheme(&self) -> ClientIdScheme {
-        self.scheme.clone()
+    pub fn get_scheme(&self) -> &ClientIdScheme {
+        &self.scheme
     }
 
-    pub fn get_id(&self) -> String {
-        self.id.clone()
+    pub fn get_id(&self) -> &String {
+        &self.id
     }
 
     pub fn get_full_id(&self) -> String {
-        match self.scheme {
-            ClientIdScheme::Did | ClientIdScheme::EntityId => self.id.clone(),
+        let id = match self.scheme {
+            ClientIdScheme::Did | ClientIdScheme::EntityId => self.get_id().to_owned(),
             ClientIdScheme::Https
             | ClientIdScheme::Preregistered
             | ClientIdScheme::RedirectUri
@@ -80,9 +81,10 @@ impl ClientId {
             | ClientIdScheme::WebOrigin
             | ClientIdScheme::X509SanDns
             | ClientIdScheme::X509SanUri => {
-                format!("{}:{}", String::from(self.scheme.clone()), self.id.clone())
+                format!("{}:{}", self.get_scheme().to_string(), self.get_id())
             }
-        }
+        };
+        id
     }
 }
 
@@ -100,11 +102,11 @@ impl TryFrom<Json> for ClientId {
 
 impl From<ClientId> for Json {
     fn from(value: ClientId) -> Self {
-        Json::String(value.get_full_id())
+        Json::String(value.get_full_id().to_owned())
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Display)]
 pub enum ClientIdScheme {
     Did,
     EntityId,
@@ -835,7 +837,7 @@ mod test {
 
         assert_eq!(
             ClientIdScheme::try_from(scheme).unwrap(),
-            client_id.get_scheme()
+            client_id.get_scheme().to_owned()
         );
         assert_eq!(id, client_id.get_id());
     }
@@ -844,14 +846,14 @@ mod test {
     #[case("https//verifier.com")]
     fn client_id_scheme_parsing_successfully_for_preregistered(#[case] id: String) {
         let client_id = ClientId::new(id.clone()).unwrap();
-        assert_eq!(ClientIdScheme::Preregistered, client_id.get_scheme());
+        assert_eq!(ClientIdScheme::Preregistered, client_id.get_scheme().to_owned());
     }
 
     #[rstest]
     #[case("")]
-    #[should_panic]
+    #[should_panic(expected = "Client ID cannot be empty.")]
     fn client_id_parsing_unsuccessfully(#[case] id: String) {
-        ClientId::new(id.clone()).unwrap();
+        ClientId::new(id).unwrap();
     }
 
     #[test]
