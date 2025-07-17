@@ -380,7 +380,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             response_uri,
             value.get_or_default::<ResponseMode>()?,
         ) {
-            (Some(uri), None, mode @ ResponseMode::DcApi | mode @ ResponseMode::DcApiJwt) => {
+            (Some(uri), None, mode @ ResponseMode::DcAPI | mode @ ResponseMode::DcAPIJwt) => {
                 (
                     uri.parsing_error()
                         .map_err(|e| {
@@ -432,7 +432,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
                     state.clone(),
                 ))
             }
-            (None, _, mode @ ResponseMode::DcApi | mode @ ResponseMode::DcApiJwt) => {
+            (None, _, mode @ ResponseMode::DcAPI | mode @ ResponseMode::DcAPIJwt) => {
                 return Err(Error::protocol_invalid_req(
                     &format!(
                         "'redirect_uri' is required for this '{}' response mode",
