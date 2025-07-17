@@ -59,7 +59,7 @@ impl<S: Signer> DIDClient<S> {
         }
 
         Ok(Self {
-            id: ClientId(id.to_string()),
+            id: ClientId::new(id.to_string())?,
             vm,
             signer,
         })
@@ -114,7 +114,7 @@ impl X509SanClient {
             bail!("x509 certificate does not contain Subject Alternative Name");
         };
         Ok(X509SanClient {
-            id: ClientId(id),
+            id: ClientId::new(id.to_string())?,
             x5c,
             signer,
             variant,

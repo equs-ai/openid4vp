@@ -14,6 +14,7 @@ use p256::elliptic_curve::rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::{fmt, ops::Deref};
+use strum_macros::Display;
 use url::Url;
 
 pub const DID: &str = "did";
@@ -28,15 +29,62 @@ pub const X509_SAN_DNS: &str = "x509_san_dns";
 pub const X509_SAN_URI: &str = "x509_san_uri";
 
 #[derive(Debug, Clone)]
-pub struct ClientId(pub String);
+pub struct ClientId {
+    id: String,
+    scheme: ClientIdScheme,
+}
 
 impl ClientId {
-    /// If the `client_id_scheme` is not present, it will be inferred from the `client_id`.
-    pub fn resolve_scheme(&self) -> Option<ClientIdScheme> {
-        self.0
-            .split(':')
-            .next()
-            .map(|r| ClientIdScheme::from(r.to_string()))
+    pub fn new(client_id: String) -> Result<Self, Error> {
+        if client_id.is_empty() {
+            return Err(anyhow!("Client ID cannot be empty."));
+        }
+        let parts = client_id.splitn(2, ':').collect::<Vec<_>>();
+        if parts.is_empty() || parts.len() > 2 {
+            return Err(anyhow!("Error while parsing client id: {}", client_id));
+        }
+        if parts.len() == 1 {
+            return Ok(Self {
+                id: parts[0].to_string(),
+                scheme: ClientIdScheme::PreRegistered,
+            });
+        }
+
+        let scheme = ClientIdScheme::try_from(parts[0].to_string())?;
+        let id = match scheme {
+            ClientIdScheme::Did | ClientIdScheme::Https => client_id.clone(),
+            ClientIdScheme::PreRegistered
+            | ClientIdScheme::RedirectUri
+            | ClientIdScheme::X509SanDns
+            | ClientIdScheme::EntityId
+            | ClientIdScheme::WebOrigin
+            | ClientIdScheme::VerifierAttestation
+            | ClientIdScheme::X509SanUri => parts[1].to_string(),
+        };
+        Ok(Self { id, scheme })
+    }
+    pub fn get_scheme(&self) -> &ClientIdScheme {
+        &self.scheme
+    }
+
+    pub fn get_id(&self) -> String {
+        self.id.to_owned()
+    }
+
+    pub fn get_full_id(&self) -> String {
+        let id = match self.scheme {
+            ClientIdScheme::Did | ClientIdScheme::EntityId => self.get_id().to_owned(),
+            ClientIdScheme::Https
+            | ClientIdScheme::PreRegistered
+            | ClientIdScheme::RedirectUri
+            | ClientIdScheme::VerifierAttestation
+            | ClientIdScheme::WebOrigin
+            | ClientIdScheme::X509SanDns
+            | ClientIdScheme::X509SanUri => {
+                format!("{}:{}", self.get_scheme().to_string(), self.get_id())
+            }
+        };
+        id
     }
 }
 
@@ -48,43 +96,46 @@ impl TryFrom<Json> for ClientId {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(Self(serde_json::from_value(value)?))
+        Self::new(serde_json::from_value(value)?)
     }
 }
 
 impl From<ClientId> for Json {
     fn from(value: ClientId) -> Self {
-        Json::String(value.0)
+        Json::String(value.get_full_id().to_owned())
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Display)]
 pub enum ClientIdScheme {
     Did,
     EntityId,
     Https,
-    Preregistered,
+    PreRegistered,
     RedirectUri,
     VerifierAttestation,
     WebOrigin,
     X509SanDns,
     X509SanUri,
-    Other(String),
 }
 
-impl From<String> for ClientIdScheme {
-    fn from(value: String) -> Self {
+impl TryFrom<String> for ClientIdScheme {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.as_str() {
-            DID => ClientIdScheme::Did,
-            ENTITY_ID => ClientIdScheme::EntityId,
-            HTTPS => ClientIdScheme::Https,
-            PREREGISTERED => ClientIdScheme::Preregistered,
-            REDIRECT_URI => ClientIdScheme::RedirectUri,
-            VERIFIER_ATTESTATION => ClientIdScheme::VerifierAttestation,
-            WEB_ORIGIN => ClientIdScheme::WebOrigin,
-            X509_SAN_DNS => ClientIdScheme::X509SanDns,
-            X509_SAN_URI => ClientIdScheme::X509SanUri,
-            _ => ClientIdScheme::Other(value),
+            DID => Ok(ClientIdScheme::Did),
+            ENTITY_ID => Ok(ClientIdScheme::EntityId),
+            HTTPS => Ok(ClientIdScheme::Https),
+            PREREGISTERED => Ok(ClientIdScheme::PreRegistered),
+            REDIRECT_URI => Ok(ClientIdScheme::RedirectUri),
+            VERIFIER_ATTESTATION => Ok(ClientIdScheme::VerifierAttestation),
+            WEB_ORIGIN => Ok(ClientIdScheme::WebOrigin),
+            X509_SAN_DNS => Ok(ClientIdScheme::X509SanDns),
+            X509_SAN_URI => Ok(ClientIdScheme::X509SanUri),
+            _ => Err(anyhow!(
+                "Given client id scheme is not supported: {}",
+                value
+            )),
         }
     }
 }
@@ -94,13 +145,12 @@ impl From<ClientIdScheme> for String {
             ClientIdScheme::Did => DID.to_string(),
             ClientIdScheme::EntityId => ENTITY_ID.to_string(),
             ClientIdScheme::Https => HTTPS.to_string(),
-            ClientIdScheme::Preregistered => PREREGISTERED.to_string(),
+            ClientIdScheme::PreRegistered => PREREGISTERED.to_string(),
             ClientIdScheme::RedirectUri => REDIRECT_URI.to_string(),
             ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION.to_string(),
             ClientIdScheme::WebOrigin => WEB_ORIGIN.to_string(),
             ClientIdScheme::X509SanDns => X509_SAN_DNS.to_string(),
             ClientIdScheme::X509SanUri => X509_SAN_URI.to_string(),
-            ClientIdScheme::Other(s) => s,
         }
     }
 }
@@ -110,7 +160,7 @@ impl TryFrom<Json> for ClientIdScheme {
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
         serde_json::from_value(value)
-            .map(String::into)
+            .map(String::try_into)?
             .map_err(Error::from)
     }
 }
@@ -751,11 +801,72 @@ impl From<HttpMethodForAuth> for String {
 
 #[cfg(test)]
 mod test {
+    use crate::core::authorization_request::parameters::{ClientId, ClientIdScheme};
     use crate::core::authorization_request::ResolvedPresentationQuery;
-    use serde_json::json;
-
     use crate::core::dcql::DcqlCredential;
+    use rstest::rstest;
+    use serde_json::json;
+    #[rstest]
+    #[case(
+        "redirect_uri:https://client.example.org/cb",
+        "redirect_uri",
+        "https://client.example.org/cb"
+    )]
+    #[case("did:web:someid", "did", "did:web:someid")]
+    #[case(
+        "x509_san_dns:client.example.org",
+        "x509_san_dns",
+        "client.example.org"
+    )]
+    #[case(
+        "https://client.example.org/cb",
+        "https",
+        "https://client.example.org/cb"
+    )]
+    #[case(
+        "verifier_attestation:example-client",
+        "verifier_attestation",
+        "example-client"
+    )]
+    fn test_client_id_scheme_parsing_successfully(
+        #[case] client_id: String,
+        #[case] scheme: String,
+        #[case] id: &str,
+    ) {
+        let client_id = ClientId::new(client_id).unwrap();
 
+        assert_eq!(
+            ClientIdScheme::try_from(scheme).unwrap(),
+            client_id.get_scheme().to_owned()
+        );
+        assert_eq!(id, client_id.get_id());
+    }
+
+    #[rstest]
+    #[case("https//verifier.com")]
+    fn client_id_scheme_parsing_successfully_for_preregistered(#[case] id: String) {
+        let client_id = ClientId::new(id.clone()).unwrap();
+        assert_eq!(
+            ClientIdScheme::PreRegistered,
+            client_id.get_scheme().to_owned()
+        );
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Given client id scheme is not supported")]
+    #[case("some:id/something")]
+    #[should_panic(expected = "Client ID cannot be empty.")]
+    #[case("")]
+    fn client_id_parsing_unsuccessfully(#[case] id: String) {
+        ClientId::new(id).unwrap();
+    }
+
+    #[rstest]
+    #[case("some:id/something")]
+    #[should_panic(expected = "Given client id scheme is not supported")]
+    fn client_id_parsing_unsuccessfully_unsupported_scheme(#[case] id: String) {
+        ClientId::new(id).unwrap();
+    }
     #[test]
     fn test() {
         serde_json::from_value::<DcqlCredential>(json!(

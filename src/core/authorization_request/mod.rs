@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use anyhow::anyhow;
@@ -25,7 +24,6 @@ use crate::core::error::ErrorType::{
     InvalidPresentationDefinitionUri,
 };
 use crate::core::error::{Error, ErrorType};
-use crate::core::metadata::url_encode_wallet_metadata;
 use crate::core::presentation_definition::PresentationDefinition;
 use crate::core::util::http::{
     create_get_request, create_post_request, AsyncHttpClient, MIME_TYPE_FORM_URLENCODED,
@@ -549,12 +547,12 @@ impl SignedAuthorizationRequest {
         let aro = verify_request(wallet, fetched_auth_req).await?;
         self.validate_nonce(wallet, &aro).await?;
         let state = aro.state();
-        if self.client_id.as_str() != aro.client_id().0.as_str() {
+        if self.client_id.as_str() != aro.client_id().get_full_id().as_str() {
             return Err(Error::protocol_invalid_req(
                 &format!(
                     "Authorization Request and Request Object have different client ids: '{}' vs. '{}'",
                     self.client_id,
-                    aro.client_id().0
+                    aro.client_id().get_full_id()
                 ),
                 state.clone(),
             ));
