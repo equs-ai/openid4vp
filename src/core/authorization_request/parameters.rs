@@ -853,8 +853,10 @@ mod test {
     }
 
     #[rstest]
-    #[case("")]
+    #[should_panic(expected = "Given client id scheme is not supported")]
+    #[case("some:id/something")]
     #[should_panic(expected = "Client ID cannot be empty.")]
+    #[case("")]
     fn client_id_parsing_unsuccessfully(#[case] id: String) {
         ClientId::new(id).unwrap();
     }
