@@ -172,7 +172,7 @@ where
                 ClientIdScheme::Did => wallet.did(&request, jwt).await?,
                 ClientIdScheme::EntityId => wallet.entity_id(&request, jwt).await?,
                 ClientIdScheme::Https => wallet.entity_id(&request, jwt).await?,
-                ClientIdScheme::Preregistered => wallet.preregistered(&request, jwt).await?,
+                ClientIdScheme::PreRegistered => wallet.preregistered(&request, jwt).await?,
                 ClientIdScheme::RedirectUri => wallet.redirect_uri(&request, jwt).await?,
                 ClientIdScheme::VerifierAttestation => {
                     wallet.verifier_attestation(&request, jwt).await?

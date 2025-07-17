@@ -116,7 +116,7 @@ impl From<ClientIdSchemesSupported> for Json {
 
 impl Default for ClientIdSchemesSupported {
     fn default() -> Self {
-        Self(vec![ClientIdScheme::Preregistered])
+        Self(vec![ClientIdScheme::PreRegistered])
     }
 }
 

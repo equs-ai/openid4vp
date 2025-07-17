@@ -46,14 +46,14 @@ impl ClientId {
         if parts.len() == 1 {
             return Ok(Self {
                 id: parts[0].to_string(),
-                scheme: ClientIdScheme::Preregistered,
+                scheme: ClientIdScheme::PreRegistered,
             });
         }
 
         let scheme = ClientIdScheme::try_from(parts[0].to_string())?;
         let id = match scheme {
             ClientIdScheme::Did | ClientIdScheme::Https => client_id.clone(),
-            ClientIdScheme::Preregistered
+            ClientIdScheme::PreRegistered
             | ClientIdScheme::RedirectUri
             | ClientIdScheme::X509SanDns
             | ClientIdScheme::EntityId
@@ -67,15 +67,15 @@ impl ClientId {
         &self.scheme
     }
 
-    pub fn get_id(&self) -> &String {
-        &self.id
+    pub fn get_id(&self) -> String {
+        self.id.to_owned()
     }
 
     pub fn get_full_id(&self) -> String {
         let id = match self.scheme {
             ClientIdScheme::Did | ClientIdScheme::EntityId => self.get_id().to_owned(),
             ClientIdScheme::Https
-            | ClientIdScheme::Preregistered
+            | ClientIdScheme::PreRegistered
             | ClientIdScheme::RedirectUri
             | ClientIdScheme::VerifierAttestation
             | ClientIdScheme::WebOrigin
@@ -111,7 +111,7 @@ pub enum ClientIdScheme {
     Did,
     EntityId,
     Https,
-    Preregistered,
+    PreRegistered,
     RedirectUri,
     VerifierAttestation,
     WebOrigin,
@@ -126,7 +126,7 @@ impl TryFrom<String> for ClientIdScheme {
             DID => Ok(ClientIdScheme::Did),
             ENTITY_ID => Ok(ClientIdScheme::EntityId),
             HTTPS => Ok(ClientIdScheme::Https),
-            PREREGISTERED => Ok(ClientIdScheme::Preregistered),
+            PREREGISTERED => Ok(ClientIdScheme::PreRegistered),
             REDIRECT_URI => Ok(ClientIdScheme::RedirectUri),
             VERIFIER_ATTESTATION => Ok(ClientIdScheme::VerifierAttestation),
             WEB_ORIGIN => Ok(ClientIdScheme::WebOrigin),
@@ -145,7 +145,7 @@ impl From<ClientIdScheme> for String {
             ClientIdScheme::Did => DID.to_string(),
             ClientIdScheme::EntityId => ENTITY_ID.to_string(),
             ClientIdScheme::Https => HTTPS.to_string(),
-            ClientIdScheme::Preregistered => PREREGISTERED.to_string(),
+            ClientIdScheme::PreRegistered => PREREGISTERED.to_string(),
             ClientIdScheme::RedirectUri => REDIRECT_URI.to_string(),
             ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION.to_string(),
             ClientIdScheme::WebOrigin => WEB_ORIGIN.to_string(),
@@ -846,7 +846,7 @@ mod test {
     #[case("https//verifier.com")]
     fn client_id_scheme_parsing_successfully_for_preregistered(#[case] id: String) {
         let client_id = ClientId::new(id.clone()).unwrap();
-        assert_eq!(ClientIdScheme::Preregistered, client_id.get_scheme().to_owned());
+        assert_eq!(ClientIdScheme::PreRegistered, client_id.get_scheme().to_owned());
     }
 
     #[rstest]
