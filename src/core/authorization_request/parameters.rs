@@ -846,7 +846,10 @@ mod test {
     #[case("https//verifier.com")]
     fn client_id_scheme_parsing_successfully_for_preregistered(#[case] id: String) {
         let client_id = ClientId::new(id.clone()).unwrap();
-        assert_eq!(ClientIdScheme::PreRegistered, client_id.get_scheme().to_owned());
+        assert_eq!(
+            ClientIdScheme::PreRegistered,
+            client_id.get_scheme().to_owned()
+        );
     }
 
     #[rstest]
@@ -856,6 +859,12 @@ mod test {
         ClientId::new(id).unwrap();
     }
 
+    #[rstest]
+    #[case("some:id/something")]
+    #[should_panic(expected = "Given client id scheme is not supported")]
+    fn client_id_parsing_unsuccessfully_unsupported_scheme(#[case] id: String) {
+        ClientId::new(id).unwrap();
+    }
     #[test]
     fn test() {
         serde_json::from_value::<DcqlCredential>(json!(
