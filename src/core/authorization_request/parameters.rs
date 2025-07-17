@@ -14,7 +14,6 @@ use p256::elliptic_curve::rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::{fmt, ops::Deref};
-use strum_macros::Display;
 use url::Url;
 
 pub const DID: &str = "did";
@@ -106,7 +105,7 @@ impl From<ClientId> for Json {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Display)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ClientIdScheme {
     Did,
     EntityId,
@@ -152,6 +151,12 @@ impl From<ClientIdScheme> for String {
             ClientIdScheme::X509SanDns => X509_SAN_DNS.to_string(),
             ClientIdScheme::X509SanUri => X509_SAN_URI.to_string(),
         }
+    }
+}
+
+impl fmt::Display for ClientIdScheme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", String::from(self.to_owned()))
     }
 }
 
