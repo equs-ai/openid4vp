@@ -531,8 +531,8 @@ impl TryFrom<Json> for ResponseUri {
 
 const DIRECT_POST: &str = "direct_post";
 const DIRECT_POST_JWT: &str = "direct_post.jwt";
-const FRAGMENT: &str = "fragment";
-const FRAGMENT_JWT: &str = "fragment.jwt";
+const DC_API: &str = "dc_api";
+const DC_API_JWT: &str = "dc_api.jwt";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(into = "String", from = "String")]
@@ -541,11 +541,11 @@ pub enum ResponseMode {
     DirectPost,
     /// The `direct_post.jwt` response mode as defined in OID4VP.
     DirectPostJwt,
-    /// The `fragment` response mode as defined in OID4VP.
+    /// The `dc_api` response mode as defined in OID4VP.
     #[default]
-    Fragment,
-    /// The `fragment.jwt` response mode as defined in OID4VP.
-    FragmentJwt,
+    DCAPI,
+    /// The `dc_api.jwt` response mode as defined in OID4VP.
+    DCAPIJwt,
     /// A ResponseMode that is unsupported by this library.
     Unsupported(String),
 }
@@ -559,8 +559,8 @@ impl From<String> for ResponseMode {
         match s.as_str() {
             DIRECT_POST => ResponseMode::DirectPost,
             DIRECT_POST_JWT => ResponseMode::DirectPostJwt,
-            FRAGMENT => ResponseMode::Fragment,
-            FRAGMENT_JWT => ResponseMode::FragmentJwt,
+            DC_API => ResponseMode::DCAPI,
+            DC_API_JWT => ResponseMode::DCAPIJwt,
             _ => ResponseMode::Unsupported(s),
         }
     }
@@ -571,8 +571,8 @@ impl From<ResponseMode> for String {
         match s {
             ResponseMode::DirectPost => DIRECT_POST.into(),
             ResponseMode::DirectPostJwt => DIRECT_POST_JWT.into(),
-            ResponseMode::Fragment => FRAGMENT.into(),
-            ResponseMode::FragmentJwt => FRAGMENT_JWT.into(),
+            ResponseMode::DCAPI => DC_API.into(),
+            ResponseMode::DCAPIJwt => DC_API_JWT.into(),
             ResponseMode::Unsupported(u) => u,
         }
     }
@@ -598,8 +598,8 @@ impl fmt::Display for ResponseMode {
         match self {
             ResponseMode::DirectPost => DIRECT_POST,
             ResponseMode::DirectPostJwt => DIRECT_POST_JWT,
-            ResponseMode::Fragment => FRAGMENT,
-            ResponseMode::FragmentJwt => FRAGMENT_JWT,
+            ResponseMode::DCAPI => DC_API,
+            ResponseMode::DCAPIJwt => DC_API_JWT,
             ResponseMode::Unsupported(u) => u,
         }
         .fmt(f)
@@ -611,8 +611,8 @@ impl ResponseMode {
         match self {
             ResponseMode::DirectPost => Ok(false),
             ResponseMode::DirectPostJwt => Ok(true),
-            ResponseMode::Fragment => Ok(false),
-            ResponseMode::FragmentJwt => Ok(true),
+            ResponseMode::DCAPI => Ok(false),
+            ResponseMode::DCAPIJwt => Ok(true),
             ResponseMode::Unsupported(rm) => bail!("unsupported response_mode: {rm}"),
         }
     }
