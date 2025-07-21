@@ -2,9 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use url::Url;
 
 use super::Verifier;
-use crate::core::authorization_request::parameters::{
-    ClientId, ClientIdScheme, ClientMetadata, RedirectUri, ResponseUri,
-};
+use crate::core::authorization_request::parameters::{ClientMetadata, RedirectUri, ResponseUri};
 use crate::core::authorization_request::SignedAuthorizationRequest;
 use crate::core::dcql::DCQL;
 use crate::core::error::{Error, ErrorType};
@@ -81,20 +79,8 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         wallet_metadata: &WalletMetadata,
         request_type: RequestType,
     ) -> Result<(Url, Option<String>), Error> {
-        let raw_client_id = self.verifier.client.id().0.clone();
+        let client_id = self.verifier.client.id();
         let client_id_scheme = self.verifier.client.scheme();
-        let merged_client_id = if client_id_scheme == ClientIdScheme::Did
-            || client_id_scheme == ClientIdScheme::Https
-        {
-            raw_client_id
-        } else {
-            format!(
-                "{}:{}",
-                String::from(client_id_scheme.clone()),
-                raw_client_id
-            )
-        };
-        let client_id = ClientId(merged_client_id);
         let _ = self.request_parameters.insert(client_id.clone());
         if (self.dcql.is_none() && self.presentation_definition.is_none())
             || (self.dcql.is_some() && self.presentation_definition.is_some())
@@ -182,7 +168,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
                     ByReference::True(rr) => RequestIndirection::ByReference(rr),
                 };
                 let signed_auth_req = SignedAuthorizationRequest {
-                    client_id: client_id.0.clone(),
+                    client_id: client_id.get_full_id().to_owned(),
                     request_indirection,
                 };
 
