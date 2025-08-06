@@ -3,7 +3,7 @@ use super::{
     AuthorizationRequestObject, FetchedAuthorizationRequest,
 };
 use crate::core::authorization_request::parameters::ResponseType;
-use crate::core::error::Error;
+use crate::core::error::{Error, ErrorType};
 use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
 use crate::core::metadata::WalletMetadata;
 use crate::core::{
@@ -179,7 +179,13 @@ where
                 ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
                 ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
                 //  request cannot be signed for ClientIdScheme::RedirectUri. link: https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-defined-client-identifier-s
-                ClientIdScheme::RedirectUri => {}
+                ClientIdScheme::RedirectUri => {
+                    return Err(Error::protocol(
+                        ErrorType::WrongClientIdScheme,
+                        "Redirect uri scheme is not supported with signed request type",
+                        None,
+                    ));
+                }
             }
 
             request
