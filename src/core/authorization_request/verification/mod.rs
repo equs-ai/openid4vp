@@ -3,7 +3,7 @@ use super::{
     AuthorizationRequestObject, FetchedAuthorizationRequest,
 };
 use crate::core::authorization_request::parameters::ResponseType;
-use crate::core::error::Error;
+use crate::core::error::{Error, ErrorType};
 use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
 use crate::core::metadata::WalletMetadata;
 use crate::core::{
@@ -19,6 +19,7 @@ use crate::core::{
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use url::Url;
 
 pub mod did;
 pub mod verifier;
@@ -35,7 +36,7 @@ pub trait RequestVerifier {
     async fn did(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        did: String,
+        request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -48,7 +49,7 @@ pub trait RequestVerifier {
     async fn entity_id(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        entity_id: String,
+        request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -61,7 +62,7 @@ pub trait RequestVerifier {
     async fn preregistered(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        registered_link: String,
+        request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -76,7 +77,7 @@ pub trait RequestVerifier {
     async fn redirect_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        redirect_uri: String,
+        redirect_uri: &Url,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -89,7 +90,7 @@ pub trait RequestVerifier {
     async fn verifier_attestation(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        attestation: String,
+        request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -102,7 +103,7 @@ pub trait RequestVerifier {
     async fn web_origin(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        link: String,
+        request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -117,7 +118,7 @@ pub trait RequestVerifier {
     async fn x509_san_dns(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        dns: String,
+        request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -132,7 +133,7 @@ pub trait RequestVerifier {
     async fn x509_san_uri(
         &self,
         decoded_request: &AuthorizationRequestObject,
-        uri: String,
+        request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
@@ -151,9 +152,7 @@ where
 {
     let request = match fetched_request {
         FetchedAuthorizationRequest::Plain(request) => {
-            wallet
-                .redirect_uri(&request, request.return_uri().to_string())
-                .await?;
+            wallet.redirect_uri(&request, request.return_uri()).await?;
             request
         }
         FetchedAuthorizationRequest::UnverifiedJwt(jwt) => {
@@ -173,13 +172,20 @@ where
                 ClientIdScheme::EntityId => wallet.entity_id(&request, jwt).await?,
                 ClientIdScheme::Https => wallet.entity_id(&request, jwt).await?,
                 ClientIdScheme::PreRegistered => wallet.preregistered(&request, jwt).await?,
-                ClientIdScheme::RedirectUri => wallet.redirect_uri(&request, jwt).await?,
                 ClientIdScheme::VerifierAttestation => {
                     wallet.verifier_attestation(&request, jwt).await?
                 }
                 ClientIdScheme::WebOrigin => wallet.web_origin(&request, jwt).await?,
                 ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
                 ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
+                //  request cannot be signed for ClientIdScheme::RedirectUri. link: https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-defined-client-identifier-s
+                ClientIdScheme::RedirectUri => {
+                    return Err(Error::protocol(
+                        ErrorType::WrongClientIdScheme,
+                        "Redirect uri scheme is not supported with signed request type",
+                        None,
+                    ));
+                }
             }
 
             request

@@ -96,6 +96,7 @@ pub enum ErrorType {
     WalletUnavailable,
     InvalidDCQLFormat,
     ClientIDSchemeNotGiven,
+    WrongClientIdScheme,
 }
 
 impl Display for ErrorType {
@@ -136,6 +137,9 @@ impl Display for ErrorType {
             }
             ErrorType::ClientIDSchemeNotGiven => {
                 write!(f, "client_id_scheme_not_given")
+            }
+            ErrorType::WrongClientIdScheme => {
+                write!(f, "wrong_client_id_scheme")
             }
         }
     }
