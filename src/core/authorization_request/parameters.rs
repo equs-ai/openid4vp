@@ -8,7 +8,7 @@ use crate::core::{
     object::{TypedParameter, UntypedObject},
 };
 use crate::utils::from_string_or_value;
-use anyhow::{anyhow, bail, Error, Ok};
+use anyhow::{anyhow, bail, Error};
 use base64::engine::general_purpose;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -211,6 +211,14 @@ impl TransactionDataItem {
             .decode(encoded)
             .map_err(|e| Internal(anyhow!(e)))?;
         serde_json::from_slice(&json_bytes).map_err(|e| Internal(anyhow!(e)))
+    }
+    
+    pub fn into_base64url_encoded(&self) -> Result<String, crate::core::error::Error> {
+        let json_string = serde_json::to_string(&self)
+            .map_err(|e| Internal(anyhow!(e)))?;
+        let encoded = BASE64_URL_SAFE_NO_PAD
+            .encode(json_string);
+       Ok(encoded)
     }
 }
 

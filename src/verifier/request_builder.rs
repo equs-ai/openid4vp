@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use url::Url;
 
 use super::Verifier;
-use crate::core::authorization_request::parameters::{ClientMetadata, RedirectUri, ResponseUri};
+use crate::core::authorization_request::parameters::{ClientMetadata, RedirectUri, ResponseUri, TransactionData, TransactionDataItem};
 use crate::core::authorization_request::SignedAuthorizationRequest;
 use crate::core::dcql::DCQL;
 use crate::core::error::{Error, ErrorType};
@@ -30,6 +30,7 @@ pub struct RequestBuilder<'a, C: Client + WasmNotSend + WasmNotSync> {
     dcql: Option<DCQL>,
     request_parameters: UntypedObject,
     verifier: &'a Verifier<C>,
+    transaction_data: Option<Vec<TransactionDataItem>>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +46,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
             request_parameters: verifier.default_request_params.clone(),
             dcql: None,
             verifier,
+            transaction_data: None,
         }
     }
 
@@ -60,6 +62,12 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
     /// Set the dcql query.
     pub fn with_dcql(mut self, dcql: DCQL) -> Self {
         self.dcql = Some(dcql);
+        self
+    }
+
+    /// Set the transaction_data.
+    pub fn with_transaction_data(mut self, transaction_data: Vec<TransactionDataItem>) -> Self {
+        self.transaction_data = Some(transaction_data);
         self
     }
 
@@ -89,7 +97,24 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
                 "one and only one of presentation definition or dcql query is required"
             )));
         };
+        
+        if self.presentation_definition.is_some() && self.transaction_data.is_some() {
+            return Err(Error::internal(anyhow!(
+                "Transaction data is used only with dcql flow"
+            )))
+        }
 
+        match &self.transaction_data {
+            Some(transaction_data) => {
+                let mut res = Vec::new();
+                for item in transaction_data {
+                    let ti= item.clone().into_base64url_encoded()?;
+                    res.push(ti);
+                }
+                self.request_parameters.insert(TransactionData(res));
+            }
+            None => {}
+        }
         match &self.presentation_definition {
             Some(pd) => {
                 Self::validate_presentation_definition(pd)?;
