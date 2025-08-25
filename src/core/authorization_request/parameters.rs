@@ -213,22 +213,13 @@ impl TransactionDataItem {
         serde_json::from_slice(&json_bytes).map_err(|e| Internal(anyhow!(e)))
     }
     
-    pub fn into_base64url_encoded(&self) -> Result<String, crate::core::error::Error> {
+    pub fn into_base64url_encoded(self) -> Result<String, crate::core::error::Error> {
         let json_string = serde_json::to_string(&self)
             .map_err(|e| Internal(anyhow!(e)))?;
-        let encoded = BASE64_URL_SAFE_NO_PAD
-            .encode(json_string);
-       Ok(encoded)
+        Ok(BASE64_URL_SAFE_NO_PAD.encode(json_string))
     }
 }
 
-impl TryFrom<String> for TransactionDataItem {
-    type Error = Error;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        let json_bytes = BASE64_URL_SAFE_NO_PAD.decode(value)?;
-        serde_json::from_slice(&json_bytes).map_err(Error::from)
-    }
-}
 
 /// `client_metadata` field in the Authorization Request.
 ///
@@ -898,9 +889,8 @@ impl TryFrom<String> for HashAlgorithm {
 }
 #[cfg(test)]
 mod test {
-    use crate::core::authorization_request::parameters::{
-        ClientId, ClientIdScheme, TransactionDataItem,
-    };
+    use std::vec;
+    use crate::core::authorization_request::parameters::{ClientId, ClientIdScheme, HashAlgorithm, TransactionDataItem};
     use crate::core::authorization_request::ResolvedPresentationQuery;
     use crate::core::dcql::DcqlCredential;
     use rstest::rstest;
@@ -967,7 +957,7 @@ mod test {
         ClientId::new(id).unwrap();
     }
     #[test]
-    fn test() {
+    fn deserialize_dcql_credential_successfully() {
         serde_json::from_value::<DcqlCredential>(json!(
             {
               "id": "pid",
@@ -1000,7 +990,7 @@ mod test {
     }
 
     #[test]
-    fn test_transaction_data_deserialize_successfully() {
+    fn transaction_data_deserializes_successfully() {
         let expected = serde_json::from_str::<TransactionDataItem>(
             r#"{
                 "type": "some-type",
@@ -1014,6 +1004,19 @@ mod test {
         assert_eq!(expected, actual);
     }
 
+    #[test]
+    fn transaction_data_deserializes_and_serializes_successfully() {
+        let original_tdi = TransactionDataItem {
+            type_: "type".to_string(),
+            credential_ids: vec!["1".to_string(), "2".to_string()],
+            transaction_data_hashes_alg: Some(vec![HashAlgorithm::Sha256]),
+        };
+        let original_str = serde_json::to_string(&original_tdi).unwrap();
+        let encoded = serde_json::from_str::<TransactionDataItem>(original_str.as_str()).unwrap().into_base64url_encoded().unwrap();
+        let decoded = TransactionDataItem::from_base64url_encoded(encoded.as_str()).unwrap();
+        assert_eq!(original_str, serde_json::to_string(&decoded).unwrap());
+    }
+    
     #[test]
     #[should_panic(expected = "Invalid padding")]
     fn test_transaction_data_deserialize_returns_padding_error() {
