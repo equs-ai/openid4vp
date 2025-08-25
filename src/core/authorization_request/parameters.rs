@@ -1,4 +1,5 @@
 use super::AuthorizationRequestObject;
+use crate::core::error::Error::Internal;
 use crate::core::{
     metadata::parameters::verifier::{
         AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
@@ -9,10 +10,12 @@ use crate::core::{
 use crate::utils::from_string_or_value;
 use anyhow::{anyhow, bail, Error, Ok};
 use base64::engine::general_purpose;
+use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use base64::Engine;
 use p256::elliptic_curve::rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
+use std::fmt::Display;
 use std::{fmt, ops::Deref};
 use url::Url;
 
@@ -193,10 +196,30 @@ impl From<TransactionData> for Json {
 impl TypedParameter for TransactionData {
     const KEY: &'static str = "transaction_data";
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TransactionDataItem {
+    #[serde(rename = "type")]
     pub type_: String,
     pub credential_ids: Vec<String>,
-    pub transaction_data_hashes_alg: Option<Vec<String>>,
+    pub transaction_data_hashes_alg: Option<Vec<HashAlgorithm>>,
+}
+
+impl TransactionDataItem {
+    pub fn from_base64url_encoded(encoded: &str) -> Result<Self, crate::core::error::Error> {
+        let json_bytes = BASE64_URL_SAFE_NO_PAD
+            .decode(encoded)
+            .map_err(|e| Internal(anyhow!(e)))?;
+        serde_json::from_slice(&json_bytes).map_err(|e| Internal(anyhow!(e)))
+    }
+}
+
+impl TryFrom<String> for TransactionDataItem {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let json_bytes = BASE64_URL_SAFE_NO_PAD.decode(value)?;
+        serde_json::from_slice(&json_bytes).map_err(Error::from)
+    }
 }
 
 /// `client_metadata` field in the Authorization Request.
@@ -804,9 +827,72 @@ impl From<HttpMethodForAuth> for String {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(into = "String", try_from = "String")]
+pub enum HashAlgorithm {
+    Sha256,
+    Sha256_128,
+    Sha256_120,
+    Sha256_96,
+    Sha256_64,
+    Sha256_32,
+    Sha384,
+    Sha512,
+    Sha3_224,
+    Sha3_256,
+    Sha3_384,
+    Sha3_512,
+}
+impl Display for HashAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            HashAlgorithm::Sha256 => "sha-256",
+            HashAlgorithm::Sha256_128 => "sha-256-128",
+            HashAlgorithm::Sha256_120 => "sha-256-120",
+            HashAlgorithm::Sha256_96 => "sha-256-96",
+            HashAlgorithm::Sha256_64 => "sha-256-64",
+            HashAlgorithm::Sha256_32 => "sha-256-32",
+            HashAlgorithm::Sha384 => "sha-384",
+            HashAlgorithm::Sha512 => "sha-512",
+            HashAlgorithm::Sha3_224 => "sha3-224",
+            HashAlgorithm::Sha3_256 => "sha3-256",
+            HashAlgorithm::Sha3_384 => "sha3-384",
+            HashAlgorithm::Sha3_512 => "sha3-512",
+        };
+        write!(f, "{}", name)
+    }
+}
+
+impl From<HashAlgorithm> for String {
+    fn from(value: HashAlgorithm) -> String {
+        value.to_string()
+    }
+}
+impl TryFrom<String> for HashAlgorithm {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "sha-256" => Ok(HashAlgorithm::Sha256),
+            "sha-256-128" => Ok(HashAlgorithm::Sha256_128),
+            "sha-256-120" => Ok(HashAlgorithm::Sha256_120),
+            "sha-256-96" => Ok(HashAlgorithm::Sha256_96),
+            "sha-256-64" => Ok(HashAlgorithm::Sha256_64),
+            "sha-256-32" => Ok(HashAlgorithm::Sha256_32),
+            "sha-384" => Ok(HashAlgorithm::Sha384),
+            "sha-512" => Ok(HashAlgorithm::Sha512),
+            "sha3-224" => Ok(HashAlgorithm::Sha3_224),
+            "sha3-256" => Ok(HashAlgorithm::Sha3_256),
+            "sha3-384" => Ok(HashAlgorithm::Sha3_384),
+            "sha3-512" => Ok(HashAlgorithm::Sha3_512),
+            _ => Err(anyhow::anyhow!("Unsupported hash algorithm".to_string())),
+        }
+    }
+}
 #[cfg(test)]
 mod test {
-    use crate::core::authorization_request::parameters::{ClientId, ClientIdScheme};
+    use crate::core::authorization_request::parameters::{
+        ClientId, ClientIdScheme, TransactionDataItem,
+    };
     use crate::core::authorization_request::ResolvedPresentationQuery;
     use crate::core::dcql::DcqlCredential;
     use rstest::rstest;
@@ -903,6 +989,35 @@ mod test {
     #[test]
     fn deserialize_common_presentation() {
         get_json();
+    }
+
+    #[test]
+    fn test_transaction_data_deserialize_successfully() {
+        let expected = serde_json::from_str::<TransactionDataItem>(
+            r#"{
+                "type": "some-type",
+                "credential_ids": ["id1", "id2"],
+                "transaction_data_hashes_alg": ["sha-256"]
+            }"#,
+        )
+        .unwrap();
+        let encoded = "ewogICAidHlwZSI6ICJzb21lLXR5cGUiLAogICAiY3JlZGVudGlhbF9pZHMiOiBbImlkMSIsICJpZDIiXSwKICAgInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6IFsic2hhLTI1NiJdCn0";
+        let actual = TransactionDataItem::from_base64url_encoded(encoded).unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid padding")]
+    fn test_transaction_data_deserialize_returns_padding_error() {
+        let encoded = "ewogICAidHlwZSI6ICJzb21lLXR5cGUiLAogICAiY3JlZGVudGlhbF9pZHMiOiBbImlkMSIsICJpZDIiXSwKICAgInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6IFsic2hhLTI1NiJdCn0=";
+        TransactionDataItem::from_base64url_encoded(encoded).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "missing field `type`")]
+    fn test_transaction_data_deserialize_returns_format_error() {
+        let encoded = "ewogICAiY3JlZGVudGlhbF9pZHMiOiBbImlkMSIsICJpZDIiXSwKICAgInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6IFsic2hhLTI1NiJdCn0";
+        TransactionDataItem::from_base64url_encoded(encoded).unwrap();
     }
 
     fn get_json() -> ResolvedPresentationQuery {

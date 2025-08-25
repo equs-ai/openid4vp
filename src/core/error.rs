@@ -96,12 +96,13 @@ pub enum ErrorType {
     WalletUnavailable,
     InvalidDCQLFormat,
     ClientIDSchemeNotGiven,
+    InvalidTransactionData,
     WrongClientIdScheme,
 }
 
 impl Display for ErrorType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self {
+        match self {
             ErrorType::InvalidScope => {
                 write!(f, "invalid_scope")
             }
@@ -140,6 +141,9 @@ impl Display for ErrorType {
             }
             ErrorType::WrongClientIdScheme => {
                 write!(f, "wrong_client_id_scheme")
+            }
+            ErrorType::InvalidTransactionData => {
+                write!(f, "invalid_transaction_data")
             }
         }
     }

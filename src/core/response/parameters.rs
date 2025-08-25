@@ -125,7 +125,7 @@ impl VpToken {
         self.0.len()
     }
 
-    pub fn iter(&self) -> std::slice::Iter<VpTokenItem> {
+    pub fn iter(&self) -> std::slice::Iter<'_, VpTokenItem> {
         self.0.iter()
     }
 
@@ -332,5 +332,45 @@ impl From<DataIntegrity<AnyJsonPresentation, AnySuite>> for VpTokenItem {
         };
 
         Self::JsonObject(obj)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactionDataHashes(pub Vec<String>);
+
+impl TypedParameter for TransactionDataHashes {
+    const KEY: &'static str = "transaction_data_hashes";
+}
+
+impl TryFrom<Json> for TransactionDataHashes {
+    type Error = Error;
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(Self(serde_json::from_value(value)?))
+    }
+}
+
+impl From<TransactionDataHashes> for Json {
+    fn from(value: TransactionDataHashes) -> Self {
+        Json::Array(value.0.into_iter().map(Json::from).collect())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TransactionDataHashesAlg(pub String);
+
+impl TypedParameter for TransactionDataHashesAlg {
+    const KEY: &'static str = "transaction_data_hashes_alg";
+}
+
+impl TryFrom<Json> for TransactionDataHashesAlg {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(Self(serde_json::from_value(value)?))
+    }
+}
+impl From<TransactionDataHashesAlg> for Json {
+    fn from(value: TransactionDataHashesAlg) -> Self {
+        Json::String(value.0)
     }
 }

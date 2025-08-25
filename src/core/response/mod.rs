@@ -3,7 +3,7 @@ use super::{object::UntypedObject, presentation_submission::PresentationSubmissi
 use self::parameters::VpToken;
 use crate::core::authorization_request::parameters::State;
 use crate::core::object::ParsingErrorContext;
-use crate::core::response::parameters::IdToken;
+use crate::core::response::parameters::{IdToken, TransactionDataHashes, TransactionDataHashesAlg};
 use anyhow::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -25,26 +25,7 @@ impl AuthorizationResponse {
         let unencoded = serde_urlencoded::from_bytes::<JsonEncodedAuthorizationResponse>(bytes)
             .context("failed to construct flat map")?;
 
-        let vp_token: VpToken =
-            serde_json::from_str(&unencoded.vp_token).context("failed to decode vp token")?;
-
-        let presentation_submission = unencoded
-            .presentation_submission
-            .map(|ps| serde_json::from_str(&ps))
-            .transpose()?;
-        let id_token = unencoded
-            .id_token
-            .map(|jwt| IdToken::try_from(jwt).parsing_error())
-            .transpose()?;
-
-        let state = unencoded.state;
-
-        Ok(Self::Unencoded(UnencodedAuthorizationResponse {
-            vp_token,
-            presentation_submission,
-            id_token,
-            state,
-        }))
+        Ok(Self::Unencoded(unencoded.try_into()?))
     }
 }
 
@@ -61,6 +42,12 @@ struct JsonEncodedAuthorizationResponse {
     /// `state` is JSON string encoded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) state: Option<String>,
+    /// `transaction_data_hashes` is JSON vec encoded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) transaction_data_hashes: Option<String>,
+    /// `transaction_data_hashes_alg` is JSON string encoded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) transaction_data_hashes_alg: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -72,6 +59,11 @@ pub struct UnencodedAuthorizationResponse {
     pub id_token: Option<IdToken>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_data_hashes: Option<TransactionDataHashes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_data_hashes_alg: Option<String>,
+    
 }
 
 impl UnencodedAuthorizationResponse {
@@ -104,6 +96,43 @@ impl UnencodedAuthorizationResponse {
     pub fn state(&self) -> &Option<String> {
         &self.state
     }
+    pub fn transaction_data_hashes(&self) -> Option<&TransactionDataHashes> {self.transaction_data_hashes.as_ref()}
+    pub fn transaction_data_hashes_alg(&self) -> Option<&String> {self.transaction_data_hashes_alg.as_ref()}
+    
+}
+
+impl TryFrom<JsonEncodedAuthorizationResponse> for UnencodedAuthorizationResponse {
+    type Error = Error;
+    fn try_from(value: JsonEncodedAuthorizationResponse) -> Result<Self> {
+        let vp_token: VpToken =
+            serde_json::from_str(&value.vp_token).context("failed to decode vp token")?;
+
+        let presentation_submission = value
+            .presentation_submission
+            .map(|ps| serde_json::from_str(&ps))
+            .transpose()?;
+        let id_token = value
+            .id_token
+            .map(|jwt| IdToken::try_from(jwt).parsing_error())
+            .transpose()?;
+
+        let state = value.state;
+        let transaction_data_hashes = value
+            .transaction_data_hashes
+            .map(|tdh| serde_json::from_str(&tdh))
+            .transpose()?;
+        let transaction_data_hashes_alg = value
+            .transaction_data_hashes_alg;
+    
+        Ok(UnencodedAuthorizationResponse{
+            vp_token,
+            presentation_submission,
+            id_token,
+            state,
+            transaction_data_hashes,
+            transaction_data_hashes_alg,
+        })
+    }
 }
 
 impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
@@ -116,11 +145,16 @@ impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
         let id_token = value.id_token.map(|i| i.jwt());
         let state = value.state;
 
+        let transaction_data_hashes = value.transaction_data_hashes
+            .and_then(|tdh| serde_json::to_string(&tdh).ok());
+        let transaction_data_hashes_alg = value.transaction_data_hashes_alg;
         Self {
             vp_token,
             presentation_submission,
             id_token,
             state,
+            transaction_data_hashes,
+            transaction_data_hashes_alg
         }
     }
 }
@@ -160,12 +194,23 @@ impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
             .map(|value| value.parsing_error())
             .transpose()?
             .map(|state| state.0);
+        let transaction_data_hashes = value
+            .get::<TransactionDataHashes>()
+            .map(|value| value.parsing_error())
+            .transpose()?;
+        let transaction_data_hashes_alg = value
+            .get::<TransactionDataHashesAlg>()
+            .map(|value| value.parsing_error())
+            .transpose()?
+            .map(|tdha| tdha.0);
 
         Ok(Self {
             vp_token,
             presentation_submission,
             id_token,
             state,
+            transaction_data_hashes,
+            transaction_data_hashes_alg,
         })
     }
 }
@@ -199,7 +244,9 @@ mod test {
                     "descriptor_map": []
                 },
                 "vp_token": "string",
-                "state": "some_state"
+                "transaction_data_hashes_alg": "some",
+                "transaction_data_hashes": ["fdsf", "assadasdsa"],
+                "state": "some_state",
             }
         ))
         .unwrap();
@@ -209,5 +256,6 @@ mod test {
         assert!(url_encoded.contains("presentation_submission=%7B%22id%22%3A%22d05a7f51-ac09-43af-8864-e00f0175f2c7%22%2C%22definition_id%22%3A%22f619e64a-8f80-4b71-8373-30cf07b1e4f2%22%2C%22descriptor_map%22%3A%5B%5D%7D"));
         assert!(url_encoded.contains("vp_token=string"));
         assert!(url_encoded.contains("state=some_state"));
+        assert!(url_encoded.contains("transaction_data_hashes_alg=some"));
     }
 }
