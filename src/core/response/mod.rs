@@ -62,8 +62,7 @@ pub struct UnencodedAuthorizationResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction_data_hashes: Option<TransactionDataHashes>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub transaction_data_hashes_alg: Option<String>,
-    
+    pub transaction_data_hashes_alg: Option<TransactionDataHashesAlg>,
 }
 
 impl UnencodedAuthorizationResponse {
@@ -96,9 +95,12 @@ impl UnencodedAuthorizationResponse {
     pub fn state(&self) -> &Option<String> {
         &self.state
     }
-    pub fn transaction_data_hashes(&self) -> Option<&TransactionDataHashes> {self.transaction_data_hashes.as_ref()}
-    pub fn transaction_data_hashes_alg(&self) -> Option<&String> {self.transaction_data_hashes_alg.as_ref()}
-    
+    pub fn transaction_data_hashes(&self) -> Option<&TransactionDataHashes> {
+        self.transaction_data_hashes.as_ref()
+    }
+    pub fn transaction_data_hashes_alg(&self) -> Option<&TransactionDataHashesAlg> {
+        self.transaction_data_hashes_alg.as_ref()
+    }
 }
 
 impl TryFrom<JsonEncodedAuthorizationResponse> for UnencodedAuthorizationResponse {
@@ -121,10 +123,9 @@ impl TryFrom<JsonEncodedAuthorizationResponse> for UnencodedAuthorizationRespons
             .transaction_data_hashes
             .map(|tdh| serde_json::from_str(&tdh))
             .transpose()?;
-        let transaction_data_hashes_alg = value
-            .transaction_data_hashes_alg;
-    
-        Ok(UnencodedAuthorizationResponse{
+        let transaction_data_hashes_alg = value.transaction_data_hashes_alg.map(|tdha| TransactionDataHashesAlg(tdha));
+
+        Ok(UnencodedAuthorizationResponse {
             vp_token,
             presentation_submission,
             id_token,
@@ -138,23 +139,22 @@ impl TryFrom<JsonEncodedAuthorizationResponse> for UnencodedAuthorizationRespons
 impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
     fn from(value: UnencodedAuthorizationResponse) -> Self {
         let vp_token = value.vp_token.format_to_string();
-
         let presentation_submission = value
             .presentation_submission
             .and_then(|ps| serde_json::to_string(&ps).ok());
         let id_token = value.id_token.map(|i| i.jwt());
         let state = value.state;
-
-        let transaction_data_hashes = value.transaction_data_hashes
+        let transaction_data_hashes = value
+            .transaction_data_hashes
             .and_then(|tdh| serde_json::to_string(&tdh).ok());
-        let transaction_data_hashes_alg = value.transaction_data_hashes_alg;
+        let transaction_data_hashes_alg = value.transaction_data_hashes_alg.map(|tdha| tdha.0);
         Self {
             vp_token,
             presentation_submission,
             id_token,
             state,
             transaction_data_hashes,
-            transaction_data_hashes_alg
+            transaction_data_hashes_alg,
         }
     }
 }
@@ -201,8 +201,7 @@ impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
         let transaction_data_hashes_alg = value
             .get::<TransactionDataHashesAlg>()
             .map(|value| value.parsing_error())
-            .transpose()?
-            .map(|tdha| tdha.0);
+            .transpose()?;
 
         Ok(Self {
             vp_token,

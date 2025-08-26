@@ -157,7 +157,7 @@ impl From<ClientIdScheme> for String {
     }
 }
 
-impl fmt::Display for ClientIdScheme {
+impl Display for ClientIdScheme {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", String::from(self.to_owned()))
     }
@@ -212,14 +212,12 @@ impl TransactionDataItem {
             .map_err(|e| Internal(anyhow!(e)))?;
         serde_json::from_slice(&json_bytes).map_err(|e| Internal(anyhow!(e)))
     }
-    
+
     pub fn into_base64url_encoded(self) -> Result<String, crate::core::error::Error> {
-        let json_string = serde_json::to_string(&self)
-            .map_err(|e| Internal(anyhow!(e)))?;
+        let json_string = serde_json::to_string(&self).map_err(|e| Internal(anyhow!(e)))?;
         Ok(BASE64_URL_SAFE_NO_PAD.encode(json_string))
     }
 }
-
 
 /// `client_metadata` field in the Authorization Request.
 ///
@@ -889,12 +887,14 @@ impl TryFrom<String> for HashAlgorithm {
 }
 #[cfg(test)]
 mod test {
-    use std::vec;
-    use crate::core::authorization_request::parameters::{ClientId, ClientIdScheme, HashAlgorithm, TransactionDataItem};
+    use crate::core::authorization_request::parameters::{
+        ClientId, ClientIdScheme, HashAlgorithm, TransactionDataItem,
+    };
     use crate::core::authorization_request::ResolvedPresentationQuery;
     use crate::core::dcql::DcqlCredential;
     use rstest::rstest;
     use serde_json::json;
+    use std::vec;
     #[rstest]
     #[case(
         "redirect_uri:https://client.example.org/cb",
@@ -1012,11 +1012,14 @@ mod test {
             transaction_data_hashes_alg: Some(vec![HashAlgorithm::Sha256]),
         };
         let original_str = serde_json::to_string(&original_tdi).unwrap();
-        let encoded = serde_json::from_str::<TransactionDataItem>(original_str.as_str()).unwrap().into_base64url_encoded().unwrap();
+        let encoded = serde_json::from_str::<TransactionDataItem>(original_str.as_str())
+            .unwrap()
+            .into_base64url_encoded()
+            .unwrap();
         let decoded = TransactionDataItem::from_base64url_encoded(encoded.as_str()).unwrap();
         assert_eq!(original_str, serde_json::to_string(&decoded).unwrap());
     }
-    
+
     #[test]
     #[should_panic(expected = "Invalid padding")]
     fn test_transaction_data_deserialize_returns_padding_error() {

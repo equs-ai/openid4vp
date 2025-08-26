@@ -29,7 +29,7 @@ pub struct RequestBuilder<'a, C: Client + WasmNotSend + WasmNotSync> {
     presentation_definition: Option<PresentationDefinition>,
     dcql: Option<DCQL>,
     request_parameters: UntypedObject,
-    verifier: &'a Verifier<C>, 
+    verifier: &'a Verifier<C>,
 }
 
 #[derive(Debug, Clone)]

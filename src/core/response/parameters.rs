@@ -355,7 +355,7 @@ impl From<TransactionDataHashes> for Json {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionDataHashesAlg(pub String);
 
 impl TypedParameter for TransactionDataHashesAlg {
