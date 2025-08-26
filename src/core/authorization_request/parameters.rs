@@ -178,7 +178,7 @@ impl From<ClientIdScheme> for Json {
         Json::String(String::from(value))
     }
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct TransactionData(pub Vec<String>);
 
 impl TryFrom<Json> for TransactionData {
