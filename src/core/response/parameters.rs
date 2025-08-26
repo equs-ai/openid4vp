@@ -335,7 +335,7 @@ impl From<DataIntegrity<AnyJsonPresentation, AnySuite>> for VpTokenItem {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransactionDataHashes(pub Vec<String>);
 
 impl TypedParameter for TransactionDataHashes {
@@ -355,7 +355,7 @@ impl From<TransactionDataHashes> for Json {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransactionDataHashesAlg(pub String);
 
 impl TypedParameter for TransactionDataHashesAlg {
