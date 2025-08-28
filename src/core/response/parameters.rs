@@ -11,6 +11,7 @@ use ssi::{
     prelude::{AnyDataIntegrity, AnyJsonPresentation, AnySuite, DataIntegrity},
     OneOrMany, JWK,
 };
+use crate::core::authorization_request::parameters::HashAlgorithm;
 
 #[derive(Debug, Clone)]
 pub struct IdToken {
@@ -356,7 +357,7 @@ impl From<TransactionDataHashes> for Json {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TransactionDataHashesAlg(pub String);
+pub struct TransactionDataHashesAlg(pub HashAlgorithm);
 
 impl TypedParameter for TransactionDataHashesAlg {
     const KEY: &'static str = "transaction_data_hashes_alg";
@@ -371,6 +372,6 @@ impl TryFrom<Json> for TransactionDataHashesAlg {
 }
 impl From<TransactionDataHashesAlg> for Json {
     fn from(value: TransactionDataHashesAlg) -> Self {
-        Json::String(value.0)
+        Json::String(value.0.to_string())
     }
 }

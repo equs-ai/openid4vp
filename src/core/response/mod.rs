@@ -50,7 +50,7 @@ impl TryFrom<JsonTransactionDataResponse> for TransactionDataResponse {
             Some(alg) => {
                 let hash_alg = HashAlgorithm::try_from(alg)
                     .context("failed to convert transaction_data_hashes_alg to HashAlgorithm")?;
-                Some(TransactionDataHashesAlg(hash_alg.to_string()))
+                Some(TransactionDataHashesAlg(hash_alg))
             }
         };
         Ok(TransactionDataResponse {
