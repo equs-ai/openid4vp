@@ -1,6 +1,7 @@
 pub use crate::core::authorization_request::parameters::State;
 use crate::core::object::TypedParameter;
 
+use crate::core::authorization_request::parameters::HashAlgorithm;
 use anyhow::{bail, Error};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
@@ -11,7 +12,6 @@ use ssi::{
     prelude::{AnyDataIntegrity, AnyJsonPresentation, AnySuite, DataIntegrity},
     OneOrMany, JWK,
 };
-use crate::core::authorization_request::parameters::HashAlgorithm;
 
 #[derive(Debug, Clone)]
 pub struct IdToken {
