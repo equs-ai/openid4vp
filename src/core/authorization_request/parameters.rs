@@ -828,33 +828,16 @@ impl From<HttpMethodForAuth> for String {
 #[serde(into = "String", try_from = "String")]
 pub enum HashAlgorithm {
     Sha256,
-    Sha256_128,
-    Sha256_120,
-    Sha256_96,
-    Sha256_64,
-    Sha256_32,
     Sha384,
     Sha512,
-    Sha3_224,
-    Sha3_256,
-    Sha3_384,
-    Sha3_512,
+    //TODO support more hash algorithms
 }
 impl Display for HashAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
             HashAlgorithm::Sha256 => "sha-256",
-            HashAlgorithm::Sha256_128 => "sha-256-128",
-            HashAlgorithm::Sha256_120 => "sha-256-120",
-            HashAlgorithm::Sha256_96 => "sha-256-96",
-            HashAlgorithm::Sha256_64 => "sha-256-64",
-            HashAlgorithm::Sha256_32 => "sha-256-32",
             HashAlgorithm::Sha384 => "sha-384",
             HashAlgorithm::Sha512 => "sha-512",
-            HashAlgorithm::Sha3_224 => "sha3-224",
-            HashAlgorithm::Sha3_256 => "sha3-256",
-            HashAlgorithm::Sha3_384 => "sha3-384",
-            HashAlgorithm::Sha3_512 => "sha3-512",
         };
         write!(f, "{}", name)
     }
@@ -870,17 +853,8 @@ impl TryFrom<String> for HashAlgorithm {
     fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.as_str() {
             "sha-256" => Ok(HashAlgorithm::Sha256),
-            "sha-256-128" => Ok(HashAlgorithm::Sha256_128),
-            "sha-256-120" => Ok(HashAlgorithm::Sha256_120),
-            "sha-256-96" => Ok(HashAlgorithm::Sha256_96),
-            "sha-256-64" => Ok(HashAlgorithm::Sha256_64),
-            "sha-256-32" => Ok(HashAlgorithm::Sha256_32),
             "sha-384" => Ok(HashAlgorithm::Sha384),
             "sha-512" => Ok(HashAlgorithm::Sha512),
-            "sha3-224" => Ok(HashAlgorithm::Sha3_224),
-            "sha3-256" => Ok(HashAlgorithm::Sha3_256),
-            "sha3-384" => Ok(HashAlgorithm::Sha3_384),
-            "sha3-512" => Ok(HashAlgorithm::Sha3_512),
             _ => Err(anyhow::anyhow!("Unsupported hash algorithm".to_string())),
         }
     }

@@ -123,7 +123,9 @@ impl TryFrom<JsonEncodedAuthorizationResponse> for UnencodedAuthorizationRespons
             .transaction_data_hashes
             .map(|tdh| serde_json::from_str(&tdh))
             .transpose()?;
-        let transaction_data_hashes_alg = value.transaction_data_hashes_alg.map(|tdha| TransactionDataHashesAlg(tdha));
+        let transaction_data_hashes_alg = value
+            .transaction_data_hashes_alg
+            .map(|tdha| TransactionDataHashesAlg(tdha));
 
         Ok(UnencodedAuthorizationResponse {
             vp_token,
