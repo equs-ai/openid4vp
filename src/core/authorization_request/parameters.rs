@@ -1,4 +1,5 @@
 use super::AuthorizationRequestObject;
+use crate::core::error::Error as CoreError;
 use crate::core::error::Error::Internal;
 use crate::core::{
     metadata::parameters::verifier::{
@@ -206,14 +207,14 @@ pub struct TransactionDataItem {
 }
 
 impl TransactionDataItem {
-    pub fn from_base64url_encoded(encoded: &str) -> Result<Self, crate::core::error::Error> {
+    pub fn from_base64url_encoded(encoded: &str) -> Result<Self, CoreError> {
         let json_bytes = BASE64_URL_SAFE_NO_PAD
             .decode(encoded)
             .map_err(|e| Internal(anyhow!(e)))?;
         serde_json::from_slice(&json_bytes).map_err(|e| Internal(anyhow!(e)))
     }
 
-    pub fn into_base64url_encoded(self) -> Result<String, crate::core::error::Error> {
+    pub fn into_base64url_encoded(self) -> Result<String, CoreError> {
         let json_string = serde_json::to_string(&self).map_err(|e| Internal(anyhow!(e)))?;
         Ok(BASE64_URL_SAFE_NO_PAD.encode(json_string))
     }

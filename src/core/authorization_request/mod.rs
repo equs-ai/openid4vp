@@ -252,7 +252,9 @@ impl AuthorizationRequestObject {
     pub fn state(&self) -> Option<String> {
         self.inner
             .get::<State>()
-            .and_then(|result| result.ok())
+            .transpose()
+            .ok()
+            .flatten()
             .map(|s| s.0)
     }
 
@@ -263,28 +265,29 @@ impl AuthorizationRequestObject {
     pub fn get_transaction_data(&self) -> Option<TransactionData> {
         self.inner
             .get::<TransactionData>()
-            .and_then(|result| result.ok())
+            .transpose()
+            .ok()
+            .flatten()
     }
     pub fn get_transaction_data_items(&self) -> Result<Option<Vec<TransactionDataItem>>, Error> {
         let td = self.get_transaction_data();
-        match td {
-            None => Ok(None),
-            Some(td) => {
-                let mut items = Vec::new();
-                for item in td.0 {
-                    match TransactionDataItem::from_base64url_encoded(item.as_str()) {
-                        Ok(item) => items.push(item),
-                        Err(e) => {
-                            return Err(Error::protocol(
-                                ErrorType::InvalidTransactionData,
-                                format!("The transaction data cannot be parsed: {}", e).as_str(),
-                                None,
-                            ));
-                        }
+        if let Some(td) = td {
+            let mut items = Vec::new();
+            for item in td.0 {
+                match TransactionDataItem::from_base64url_encoded(&item) {
+                    Ok(item) => items.push(item),
+                    Err(e) => {
+                        return Err(Error::protocol(
+                            ErrorType::InvalidTransactionData,
+                            format!("The transaction data cannot be parsed: {}", e).as_str(),
+                            None,
+                        ));
                     }
                 }
-                Ok(Some(items))
             }
+            Ok(Some(items))
+        } else {
+            Ok(None)
         }
     }
 

@@ -82,19 +82,20 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         let client_id = self.verifier.client.id();
         let client_id_scheme = self.verifier.client.scheme();
         let _ = self.request_parameters.insert(client_id.clone());
-        if (self.dcql.is_none() && self.presentation_definition.is_none())
-            || (self.dcql.is_some() && self.presentation_definition.is_some())
-        {
-            return Err(Error::internal(anyhow!(
-                "one and only one of presentation definition or dcql query is required"
-            )));
-        };
-        if let Some(dcql) = self.dcql.clone() {
-            self.request_parameters.insert(dcql);
-        }
-        if let Some(presentation_definition) = self.presentation_definition.clone() {
-            Self::validate_presentation_definition(&presentation_definition)?;
-            self.request_parameters.insert(presentation_definition);
+
+        match (self.dcql.clone(), self.presentation_definition.clone()) {
+            (Some(_), Some(_)) | (None, None) => {
+                return Err(Error::internal(anyhow!(
+                    "one and only one of presentation definition or dcql query is required"
+                )));
+            }
+            (Some(dcql), None) => {
+                self.request_parameters.insert(dcql);
+            }
+            (None, Some(presentation_definition)) => {
+                Self::validate_presentation_definition(&presentation_definition)?;
+                self.request_parameters.insert(presentation_definition);
+            }
         }
         self.validate_response_type(&wallet_metadata)?;
 

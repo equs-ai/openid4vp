@@ -102,7 +102,7 @@ pub enum ErrorType {
 
 impl Display for ErrorType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
+        match &self {
             ErrorType::InvalidScope => {
                 write!(f, "invalid_scope")
             }

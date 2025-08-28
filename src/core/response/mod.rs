@@ -4,7 +4,7 @@ use self::parameters::VpToken;
 use crate::core::authorization_request::parameters::State;
 use crate::core::object::ParsingErrorContext;
 use crate::core::response::parameters::{IdToken, TransactionDataHashes, TransactionDataHashesAlg};
-use anyhow::{Context, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -185,25 +185,28 @@ impl TryFrom<UntypedObject> for UnencodedAuthorizationResponse {
 
     fn try_from(value: UntypedObject) -> Result<Self, Self::Error> {
         let vp_token = value.get().parsing_error()?;
-        let presentation_submission = value.get().parsing_error().ok();
+        let presentation_submission = value
+            .get()
+            .transpose()
+            .map_err(|e| anyhow!(format!("Error getting presentation_submission: {}", e)))?;
         let id_token = value
             .get::<IdToken>()
-            .map(|value| value.parsing_error())
-            .transpose()?;
+            .transpose()
+            .map_err(|e| anyhow!(format!("Error getting id_token: {}", e)))?;
 
         let state = value
             .get::<State>()
-            .map(|value| value.parsing_error())
-            .transpose()?
+            .transpose()
+            .map_err(|e| anyhow!(format!("Error getting state: {}", e)))?
             .map(|state| state.0);
         let transaction_data_hashes = value
             .get::<TransactionDataHashes>()
-            .map(|value| value.parsing_error())
-            .transpose()?;
+            .transpose()
+            .map_err(|e| anyhow!(format!("Error getting transaction_data_hashes: {}", e)))?;
         let transaction_data_hashes_alg = value
             .get::<TransactionDataHashesAlg>()
-            .map(|value| value.parsing_error())
-            .transpose()?;
+            .transpose()
+            .map_err(|e| anyhow!(format!("Error getting transaction_data_hashes_alg: {}", e)))?;
 
         Ok(Self {
             vp_token,
@@ -245,8 +248,8 @@ mod test {
                     "descriptor_map": []
                 },
                 "vp_token": "string",
-                "transaction_data_hashes_alg": "some",
-                "transaction_data_hashes": ["fdsf", "assadasdsa"],
+                "transaction_data_hashes_alg": "sha-256",
+                "transaction_data_hashes": ["hash1", "hash2"],
                 "state": "some_state",
             }
         ))
@@ -257,6 +260,6 @@ mod test {
         assert!(url_encoded.contains("presentation_submission=%7B%22id%22%3A%22d05a7f51-ac09-43af-8864-e00f0175f2c7%22%2C%22definition_id%22%3A%22f619e64a-8f80-4b71-8373-30cf07b1e4f2%22%2C%22descriptor_map%22%3A%5B%5D%7D"));
         assert!(url_encoded.contains("vp_token=string"));
         assert!(url_encoded.contains("state=some_state"));
-        assert!(url_encoded.contains("transaction_data_hashes_alg=some"));
+        assert!(url_encoded.contains("transaction_data_hashes_alg=sha-256"));
     }
 }
