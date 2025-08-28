@@ -1,7 +1,7 @@
 use super::{object::UntypedObject, presentation_submission::PresentationSubmission};
 
 use self::parameters::VpToken;
-use crate::core::authorization_request::parameters::State;
+use crate::core::authorization_request::parameters::{HashAlgorithm, State};
 use crate::core::object::ParsingErrorContext;
 use crate::core::response::parameters::{IdToken, TransactionDataHashes, TransactionDataHashesAlg};
 use anyhow::{anyhow, Context, Error, Result};
@@ -35,6 +35,48 @@ pub struct TransactionDataResponse {
     pub transaction_data_hashes_alg: Option<TransactionDataHashesAlg>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct JsonTransactionDataResponse {
+    pub transaction_data_hashes: String,
+    pub transaction_data_hashes_alg: Option<String>,
+}
+impl TryFrom<JsonTransactionDataResponse> for TransactionDataResponse {
+    type Error = Error;
+    fn try_from(value: JsonTransactionDataResponse) -> Result<Self> {
+        let transaction_data_hashes = serde_json::from_str(&value.transaction_data_hashes)
+            .context("failed to serialize transaction_data_hashes")?;
+        let transaction_data_hashes_alg = match value.transaction_data_hashes_alg {
+            None => None,
+            Some(alg) => {
+                let hash_alg = HashAlgorithm::try_from(alg)
+                    .context("failed to convert transaction_data_hashes_alg to HashAlgorithm")?;
+                Some(TransactionDataHashesAlg(hash_alg.to_string()))
+            }
+        };
+        Ok(TransactionDataResponse {
+            transaction_data_hashes,
+            transaction_data_hashes_alg,
+        })
+    }
+}
+
+impl TryFrom<TransactionDataResponse> for JsonTransactionDataResponse {
+    type Error = Error;
+    fn try_from(value: TransactionDataResponse) -> Result<Self> {
+        let transaction_data_hashes = serde_json::to_string(&value.transaction_data_hashes)
+            .context("failed to serialize transaction_data_hashes")?;
+        let transaction_data_hashes_alg = match value.transaction_data_hashes_alg {
+            None => None,
+            Some(alg) => Some(serde_json::to_string(&alg.0)),
+        }
+        .transpose()
+        .context("failed to serialize transaction_data_hashes_alg")?;
+        Ok(Self {
+            transaction_data_hashes,
+            transaction_data_hashes_alg,
+        })
+    }
+}
 #[derive(Debug, Deserialize, Serialize)]
 struct JsonEncodedAuthorizationResponse {
     /// `vp_token` is JSON string encoded.
@@ -49,10 +91,8 @@ struct JsonEncodedAuthorizationResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) state: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) transaction_data_hashes: Option<String>,
-    /// `transaction_data_hashes_alg` is JSON string encoded.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) transaction_data_hashes_alg: Option<String>,
+    #[serde(flatten)]
+    pub(crate) transaction_data_response: Option<JsonTransactionDataResponse>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -72,7 +112,7 @@ pub struct UnencodedAuthorizationResponse {
 impl UnencodedAuthorizationResponse {
     /// Encode the Authorization Response as 'application/x-www-form-urlencoded'.
     pub fn into_x_www_form_urlencoded(self) -> Result<String> {
-        let encoded = serde_urlencoded::to_string(JsonEncodedAuthorizationResponse::from(self))
+        let encoded = serde_urlencoded::to_string(JsonEncodedAuthorizationResponse::try_from(self)?)
             .context(
                 "failed to encode UnencodedAuthorizationResponse as 'application/x-www-form-urlencoded'",
             )?;
@@ -119,20 +159,12 @@ impl TryFrom<JsonEncodedAuthorizationResponse> for UnencodedAuthorizationRespons
             .map(|jwt| IdToken::try_from(jwt).parsing_error())
             .transpose()?;
 
-        let state = value.state;
-        let transaction_data_hashes = value
-            .transaction_data_hashes
-            .map(|tdh| serde_json::from_str(&tdh))
-            .transpose()?;
-        let transaction_data_hashes_alg = value
-            .transaction_data_hashes_alg
-            .map(|tdha| TransactionDataHashesAlg(tdha));
+        let transaction_data_response = match value.transaction_data_response {
+            None => None,
+            Some(tdr) => Some(tdr.try_into()?),
+        };
 
-        let transaction_data_response =
-            transaction_data_hashes.map(|tdh| TransactionDataResponse {
-                transaction_data_hashes: tdh,
-                transaction_data_hashes_alg,
-            });
+        let state = value.state;
         Ok(UnencodedAuthorizationResponse {
             vp_token,
             presentation_submission,
@@ -143,33 +175,26 @@ impl TryFrom<JsonEncodedAuthorizationResponse> for UnencodedAuthorizationRespons
     }
 }
 
-impl From<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
-    fn from(value: UnencodedAuthorizationResponse) -> Self {
+impl TryFrom<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationResponse {
+    type Error = Error;
+    fn try_from(value: UnencodedAuthorizationResponse) -> Result<Self> {
         let vp_token = value.vp_token.format_to_string();
         let presentation_submission = value
             .presentation_submission
             .and_then(|ps| serde_json::to_string(&ps).ok());
         let id_token = value.id_token.map(|i| i.jwt());
         let state = value.state;
-        let transaction_data_hashes = value
-            .transaction_data_response
-            .as_ref()
-            .map(|d| d.transaction_data_hashes.to_owned())
-            .and_then(|tdh| serde_json::to_string(&tdh).ok());
-        let transaction_data_hashes_alg = value
-            .transaction_data_response
-            .map(|tdr| tdr.transaction_data_hashes_alg)
-            .flatten()
-            .map(|tdha| serde_json::to_string(&tdha).ok())
-            .flatten();
-        Self {
+        let transaction_data_response = match value.transaction_data_response {
+            None => None,
+            Some(tdr) => Some(tdr.try_into()?),
+        };
+        Ok(Self {
             vp_token,
             presentation_submission,
             id_token,
             state,
-            transaction_data_hashes,
-            transaction_data_hashes_alg,
-        }
+            transaction_data_response,
+        })
     }
 }
 

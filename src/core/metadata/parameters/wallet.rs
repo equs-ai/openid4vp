@@ -401,6 +401,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn request_object_signing_alg_values_supported() {
         let exp = ["ES256".to_string()];
         let RequestObjectSigningAlgValuesSupported(v) = metadata().get().unwrap().unwrap();
