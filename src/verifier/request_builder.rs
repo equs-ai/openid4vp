@@ -86,7 +86,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         match (self.dcql.clone(), self.presentation_definition.clone()) {
             (Some(_), Some(_)) | (None, None) => {
                 return Err(Error::internal(anyhow!(
-                    "one and only one of presentation definition or dcql query is required"
+                    "either presentation definition or dcql query must present"
                 )));
             }
             (Some(dcql), None) => {

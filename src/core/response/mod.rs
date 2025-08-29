@@ -63,14 +63,11 @@ impl TryFrom<JsonTransactionDataResponse> for TransactionDataResponse {
 impl TryFrom<TransactionDataResponse> for JsonTransactionDataResponse {
     type Error = Error;
     fn try_from(value: TransactionDataResponse) -> Result<Self> {
-        let transaction_data_hashes = serde_json::to_string(&value.transaction_data_hashes)
-            .context("failed to serialize transaction_data_hashes")?;
-        let transaction_data_hashes_alg = match value.transaction_data_hashes_alg {
-            None => None,
-            Some(alg) => Some(serde_json::to_string(&alg.0)),
-        }
-        .transpose()
-        .context("failed to serialize transaction_data_hashes_alg")?;
+        let transaction_data_hashes = serde_json::to_string(&value.transaction_data_hashes)?;
+        let transaction_data_hashes_alg = value
+            .transaction_data_hashes_alg
+            .map(|alg| serde_json::to_string(&alg.0))
+            .transpose()?;
         Ok(Self {
             transaction_data_hashes,
             transaction_data_hashes_alg,
@@ -113,9 +110,7 @@ impl UnencodedAuthorizationResponse {
     /// Encode the Authorization Response as 'application/x-www-form-urlencoded'.
     pub fn into_x_www_form_urlencoded(self) -> Result<String> {
         let encoded = serde_urlencoded::to_string(JsonEncodedAuthorizationResponse::try_from(self)?)
-            .context(
-                "failed to encode UnencodedAuthorizationResponse as 'application/x-www-form-urlencoded'",
-            )?;
+            .map_err(|_| anyhow!("failed to encode UnencodedAuthorizationResponse as 'application/x-www-form-urlencoded'"))?;
 
         Ok(encoded)
     }
@@ -159,9 +154,10 @@ impl TryFrom<JsonEncodedAuthorizationResponse> for UnencodedAuthorizationRespons
             .map(|jwt| IdToken::try_from(jwt).parsing_error())
             .transpose()?;
 
-        let transaction_data_response = match value.transaction_data_response {
-            None => None,
-            Some(tdr) => Some(tdr.try_into()?),
+        let transaction_data_response = if let Some(tdr) = value.transaction_data_response {
+            Some(tdr.try_into()?)
+        } else {
+            None
         };
 
         let state = value.state;
@@ -184,9 +180,10 @@ impl TryFrom<UnencodedAuthorizationResponse> for JsonEncodedAuthorizationRespons
             .and_then(|ps| serde_json::to_string(&ps).ok());
         let id_token = value.id_token.map(|i| i.jwt());
         let state = value.state;
-        let transaction_data_response = match value.transaction_data_response {
-            None => None,
-            Some(tdr) => Some(tdr.try_into()?),
+        let transaction_data_response = if let Some(tdr) = value.transaction_data_response {
+            Some(tdr.try_into()?)
+        } else {
+            None
         };
         Ok(Self {
             vp_token,

@@ -274,15 +274,14 @@ impl AuthorizationRequestObject {
         if let Some(td) = td {
             let mut items = Vec::new();
             for item in td.0 {
-                match TransactionDataItem::from_base64url_encoded(&item) {
-                    Ok(item) => items.push(item),
-                    Err(e) => {
-                        return Err(Error::protocol(
-                            ErrorType::InvalidTransactionData,
-                            format!("The transaction data cannot be parsed: {}", e).as_str(),
-                            None,
-                        ));
-                    }
+                if let Ok(item) = TransactionDataItem::from_base64url_encoded(&item) {
+                    items.push(item);
+                } else {
+                    return Err(Error::protocol(
+                        ErrorType::InvalidTransactionData,
+                        "The transaction data cannot be parsed: {}",
+                        None,
+                    ));
                 }
             }
             Ok(Some(items))
