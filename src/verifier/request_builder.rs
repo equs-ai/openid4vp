@@ -83,7 +83,10 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         let client_id_scheme = self.verifier.client.scheme();
         let _ = self.request_parameters.insert(client_id.clone());
 
-        match (self.dcql.clone(), self.presentation_definition.clone()) {
+        match (
+            self.dcql.to_owned(),
+            self.presentation_definition.to_owned(),
+        ) {
             (Some(_), Some(_)) | (None, None) => {
                 return Err(Error::internal(anyhow!(
                     "either presentation definition or dcql query must present"

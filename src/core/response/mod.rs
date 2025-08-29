@@ -4,7 +4,7 @@ use self::parameters::VpToken;
 use crate::core::authorization_request::parameters::{HashAlgorithm, State};
 use crate::core::object::ParsingErrorContext;
 use crate::core::response::parameters::{IdToken, TransactionDataHashes, TransactionDataHashesAlg};
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Error, Result};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -23,7 +23,7 @@ impl AuthorizationResponse {
         }
 
         let unencoded = serde_urlencoded::from_bytes::<JsonEncodedAuthorizationResponse>(bytes)
-            .context("failed to construct flat map")?;
+            .map_err(|_| anyhow!("failed to construct flat map"))?;
 
         Ok(Self::Unencoded(unencoded.try_into()?))
     }
@@ -44,12 +44,13 @@ impl TryFrom<JsonTransactionDataResponse> for TransactionDataResponse {
     type Error = Error;
     fn try_from(value: JsonTransactionDataResponse) -> Result<Self> {
         let transaction_data_hashes = serde_json::from_str(&value.transaction_data_hashes)
-            .context("failed to serialize transaction_data_hashes")?;
+            .map_err(|_| anyhow!("failed to serialize transaction_data_hashes"))?;
         let transaction_data_hashes_alg = match value.transaction_data_hashes_alg {
             None => None,
             Some(alg) => {
-                let hash_alg = HashAlgorithm::try_from(alg)
-                    .context("failed to convert transaction_data_hashes_alg to HashAlgorithm")?;
+                let hash_alg = HashAlgorithm::try_from(alg).map_err(|_| {
+                    anyhow!("failed to convert transaction_data_hashes_alg to HashAlgorithm")
+                })?;
                 Some(TransactionDataHashesAlg(hash_alg))
             }
         };
@@ -142,8 +143,8 @@ impl UnencodedAuthorizationResponse {
 impl TryFrom<JsonEncodedAuthorizationResponse> for UnencodedAuthorizationResponse {
     type Error = Error;
     fn try_from(value: JsonEncodedAuthorizationResponse) -> Result<Self> {
-        let vp_token: VpToken =
-            serde_json::from_str(&value.vp_token).context("failed to decode vp token")?;
+        let vp_token: VpToken = serde_json::from_str(&value.vp_token)
+            .map_err(|_| anyhow!("failed to decode vp token"))?;
 
         let presentation_submission = value
             .presentation_submission
@@ -204,8 +205,9 @@ pub struct JwtAuthorizationResponse {
 impl JwtAuthorizationResponse {
     /// Encode the Authorization Response as 'application/x-www-form-urlencoded'.
     pub fn into_x_www_form_urlencoded(self) -> Result<String> {
-        serde_urlencoded::to_string(self)
-            .context("failed to encode response as 'application/x-www-form-urlencoded'")
+        serde_urlencoded::to_string(self).map_err(|_| {
+            anyhow!("failed to encode response as 'application/x-www-form-urlencoded'")
+        })
     }
 }
 
