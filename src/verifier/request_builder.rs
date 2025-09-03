@@ -5,7 +5,7 @@ use super::Verifier;
 use crate::core::authorization_request::parameters::{ClientMetadata, RedirectUri, ResponseUri};
 use crate::core::authorization_request::SignedAuthorizationRequest;
 use crate::core::dcql::DCQL;
-use crate::core::error::{Error, ErrorType};
+use crate::core::error::Error;
 use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
 use crate::core::{
     authorization_request::{
@@ -82,31 +82,23 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         let client_id = self.verifier.client.id();
         let client_id_scheme = self.verifier.client.scheme();
         let _ = self.request_parameters.insert(client_id.clone());
-        if (self.dcql.is_none() && self.presentation_definition.is_none())
-            || (self.dcql.is_some() && self.presentation_definition.is_some())
-        {
-            return Err(Error::internal(anyhow!(
-                "one and only one of presentation definition or dcql query is required"
-            )));
-        };
 
-        match &self.presentation_definition {
-            Some(pd) => {
-                Self::validate_presentation_definition(pd)?;
-                self.request_parameters.insert(pd.to_owned());
+        match (
+            self.dcql.to_owned(),
+            self.presentation_definition.to_owned(),
+        ) {
+            (Some(_), Some(_)) | (None, None) => {
+                return Err(Error::internal(anyhow!(
+                    "either presentation definition or dcql query must present"
+                )));
             }
-            None => match &self.dcql {
-                Some(dcql) => {
-                    self.request_parameters.insert(dcql.to_owned());
-                }
-                None => {
-                    return Err(Error::protocol(
-                        ErrorType::InvalidRequest,
-                        "At least one of dcql or presentation_definition should be present",
-                        None,
-                    ));
-                }
-            },
+            (Some(dcql), None) => {
+                self.request_parameters.insert(dcql);
+            }
+            (None, Some(presentation_definition)) => {
+                Self::validate_presentation_definition(&presentation_definition)?;
+                self.request_parameters.insert(presentation_definition);
+            }
         }
         self.validate_response_type(&wallet_metadata)?;
 

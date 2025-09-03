@@ -15,7 +15,7 @@ use self::parameters::{
 };
 use super::object::{ParsingErrorContext, UntypedObject};
 use crate::core::authorization_request::parameters::{
-    ClientMetadata, HttpMethodForAuth, State, TransactionData, WalletNonce,
+    ClientMetadata, HttpMethodForAuth, State, TransactionData, TransactionDataItem, WalletNonce,
 };
 use crate::core::authorization_request::verification::verify_request;
 use crate::core::dcql::DCQL;
@@ -252,7 +252,9 @@ impl AuthorizationRequestObject {
     pub fn state(&self) -> Option<String> {
         self.inner
             .get::<State>()
-            .and_then(|result| result.ok())
+            .transpose()
+            .ok()
+            .flatten()
             .map(|s| s.0)
     }
 
@@ -263,7 +265,28 @@ impl AuthorizationRequestObject {
     pub fn get_transaction_data(&self) -> Option<TransactionData> {
         self.inner
             .get::<TransactionData>()
-            .and_then(|result| result.ok())
+            .transpose()
+            .ok()
+            .flatten()
+    }
+    pub fn get_transaction_data_items(&self) -> Result<Option<Vec<TransactionDataItem>>, Error> {
+        if let Some(td) = self.get_transaction_data() {
+            let mut items = Vec::new();
+            for item in td.0 {
+                let item = TransactionDataItem::from_base64url_encoded(&item).map_err(|e| {
+                    Error::protocol(
+                        ErrorType::InvalidTransactionData,
+                        "The transaction data cannot be parsed: {}",
+                        Some(e.to_string()),
+                    )
+                })?;
+                items.push(item);
+            }
+
+            Ok(Some(items))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn resolve_presentation_query<HC>(

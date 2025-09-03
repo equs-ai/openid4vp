@@ -1,4 +1,6 @@
 use super::AuthorizationRequestObject;
+use crate::core::error::Error as CoreError;
+use crate::core::error::Error::Internal;
 use crate::core::{
     metadata::parameters::verifier::{
         AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
@@ -7,12 +9,14 @@ use crate::core::{
     object::{TypedParameter, UntypedObject},
 };
 use crate::utils::from_string_or_value;
-use anyhow::{anyhow, bail, Error, Ok};
+use anyhow::{anyhow, bail, Error};
 use base64::engine::general_purpose;
+use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use base64::Engine;
 use p256::elliptic_curve::rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
+use std::fmt::Display;
 use std::{fmt, ops::Deref};
 use url::Url;
 
@@ -154,7 +158,7 @@ impl From<ClientIdScheme> for String {
     }
 }
 
-impl fmt::Display for ClientIdScheme {
+impl Display for ClientIdScheme {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", String::from(self.to_owned()))
     }
@@ -175,7 +179,7 @@ impl From<ClientIdScheme> for Json {
         Json::String(String::from(value))
     }
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct TransactionData(pub Vec<String>);
 
 impl TryFrom<Json> for TransactionData {
@@ -193,10 +197,27 @@ impl From<TransactionData> for Json {
 impl TypedParameter for TransactionData {
     const KEY: &'static str = "transaction_data";
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TransactionDataItem {
+    #[serde(rename = "type")]
     pub type_: String,
     pub credential_ids: Vec<String>,
-    pub transaction_data_hashes_alg: Option<Vec<String>>,
+    pub transaction_data_hashes_alg: Option<Vec<HashAlgorithm>>,
+}
+
+impl TransactionDataItem {
+    pub fn from_base64url_encoded(encoded: &str) -> Result<Self, CoreError> {
+        let json_bytes = BASE64_URL_SAFE_NO_PAD
+            .decode(encoded)
+            .map_err(|e| Internal(anyhow!(e)))?;
+        serde_json::from_slice(&json_bytes).map_err(|e| Internal(anyhow!(e)))
+    }
+
+    pub fn into_base64url_encoded(self) -> Result<String, CoreError> {
+        let json_string = serde_json::to_string(&self).map_err(|e| Internal(anyhow!(e)))?;
+        Ok(BASE64_URL_SAFE_NO_PAD.encode(json_string))
+    }
 }
 
 /// `client_metadata` field in the Authorization Request.
@@ -804,13 +825,51 @@ impl From<HttpMethodForAuth> for String {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(into = "String", try_from = "String")]
+pub enum HashAlgorithm {
+    Sha256,
+    Sha384,
+    Sha512,
+    //TODO support more hash algorithms
+}
+impl Display for HashAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            HashAlgorithm::Sha256 => "sha-256",
+            HashAlgorithm::Sha384 => "sha-384",
+            HashAlgorithm::Sha512 => "sha-512",
+        };
+        write!(f, "{}", name)
+    }
+}
+
+impl From<HashAlgorithm> for String {
+    fn from(value: HashAlgorithm) -> String {
+        value.to_string()
+    }
+}
+impl TryFrom<String> for HashAlgorithm {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "sha-256" => Ok(HashAlgorithm::Sha256),
+            "sha-384" => Ok(HashAlgorithm::Sha384),
+            "sha-512" => Ok(HashAlgorithm::Sha512),
+            _ => Err(anyhow::anyhow!("Unsupported hash algorithm".to_string())),
+        }
+    }
+}
 #[cfg(test)]
 mod test {
-    use crate::core::authorization_request::parameters::{ClientId, ClientIdScheme};
+    use crate::core::authorization_request::parameters::{
+        ClientId, ClientIdScheme, HashAlgorithm, TransactionDataItem,
+    };
     use crate::core::authorization_request::ResolvedPresentationQuery;
     use crate::core::dcql::DcqlCredential;
     use rstest::rstest;
     use serde_json::json;
+    use std::vec;
     #[rstest]
     #[case(
         "redirect_uri:https://client.example.org/cb",
@@ -873,7 +932,7 @@ mod test {
         ClientId::new(id).unwrap();
     }
     #[test]
-    fn test() {
+    fn deserialize_dcql_credential_successfully() {
         serde_json::from_value::<DcqlCredential>(json!(
             {
               "id": "pid",
@@ -903,6 +962,51 @@ mod test {
     #[test]
     fn deserialize_common_presentation() {
         get_json();
+    }
+
+    #[test]
+    fn transaction_data_deserializes_successfully() {
+        let expected = serde_json::from_str::<TransactionDataItem>(
+            r#"{
+                "type": "some-type",
+                "credential_ids": ["id1", "id2"],
+                "transaction_data_hashes_alg": ["sha-256"]
+            }"#,
+        )
+        .unwrap();
+        let encoded = "ewogICAidHlwZSI6ICJzb21lLXR5cGUiLAogICAiY3JlZGVudGlhbF9pZHMiOiBbImlkMSIsICJpZDIiXSwKICAgInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6IFsic2hhLTI1NiJdCn0";
+        let actual = TransactionDataItem::from_base64url_encoded(encoded).unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn transaction_data_deserializes_and_serializes_successfully() {
+        let original_tdi = TransactionDataItem {
+            type_: "type".to_string(),
+            credential_ids: vec!["1".to_string(), "2".to_string()],
+            transaction_data_hashes_alg: Some(vec![HashAlgorithm::Sha256]),
+        };
+        let original_str = serde_json::to_string(&original_tdi).unwrap();
+        let encoded = serde_json::from_str::<TransactionDataItem>(original_str.as_str())
+            .unwrap()
+            .into_base64url_encoded()
+            .unwrap();
+        let decoded = TransactionDataItem::from_base64url_encoded(encoded.as_str()).unwrap();
+        assert_eq!(original_str, serde_json::to_string(&decoded).unwrap());
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid padding")]
+    fn test_transaction_data_deserialize_returns_padding_error() {
+        let encoded = "ewogICAidHlwZSI6ICJzb21lLXR5cGUiLAogICAiY3JlZGVudGlhbF9pZHMiOiBbImlkMSIsICJpZDIiXSwKICAgInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6IFsic2hhLTI1NiJdCn0=";
+        TransactionDataItem::from_base64url_encoded(encoded).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "missing field `type`")]
+    fn test_transaction_data_deserialize_returns_format_error() {
+        let encoded = "ewogICAiY3JlZGVudGlhbF9pZHMiOiBbImlkMSIsICJpZDIiXSwKICAgInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6IFsic2hhLTI1NiJdCn0";
+        TransactionDataItem::from_base64url_encoded(encoded).unwrap();
     }
 
     fn get_json() -> ResolvedPresentationQuery {
