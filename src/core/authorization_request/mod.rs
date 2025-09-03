@@ -270,8 +270,7 @@ impl AuthorizationRequestObject {
             .flatten()
     }
     pub fn get_transaction_data_items(&self) -> Result<Option<Vec<TransactionDataItem>>, Error> {
-        let td = self.get_transaction_data();
-        if let Some(td) = td {
+        if let Some(td) = self.get_transaction_data() {
             let mut items = Vec::new();
             for item in td.0 {
                 let item = TransactionDataItem::from_base64url_encoded(&item).map_err(|e| {

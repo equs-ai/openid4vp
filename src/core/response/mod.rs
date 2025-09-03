@@ -45,14 +45,13 @@ impl TryFrom<JsonTransactionDataResponse> for TransactionDataResponse {
     fn try_from(value: JsonTransactionDataResponse) -> Result<Self> {
         let transaction_data_hashes = serde_json::from_str(&value.transaction_data_hashes)
             .map_err(|_| anyhow!("failed to serialize transaction_data_hashes"))?;
-        let transaction_data_hashes_alg = match value.transaction_data_hashes_alg {
-            None => None,
-            Some(alg) => {
-                let hash_alg = HashAlgorithm::try_from(alg).map_err(|_| {
-                    anyhow!("failed to convert transaction_data_hashes_alg to HashAlgorithm")
-                })?;
-                Some(TransactionDataHashesAlg(hash_alg))
-            }
+        let transaction_data_hashes_alg = if let Some(alg) = value.transaction_data_hashes_alg {
+            let hash_alg = HashAlgorithm::try_from(alg).map_err(|_| {
+                anyhow!("failed to convert transaction_data_hashes_alg to HashAlgorithm")
+            })?;
+            Some(TransactionDataHashesAlg(hash_alg))
+        } else {
+            None
         };
         Ok(TransactionDataResponse {
             transaction_data_hashes,
