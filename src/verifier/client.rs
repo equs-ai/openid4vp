@@ -14,6 +14,7 @@ use x509_cert::{
     Certificate,
 };
 
+use crate::core::authorization_request::parameters::DECENTRALIZED_IDENTIFIER;
 use crate::core::authorization_request::{
     parameters::{ClientId, ClientIdScheme},
     AuthorizationRequestObject,
@@ -60,8 +61,9 @@ impl<S: Signer> DecentralizedIdentifierClient<S> {
             )
         }
 
+        let client_id = format!("{}:{}", DECENTRALIZED_IDENTIFIER, id);
         Ok(Self {
-            id: ClientId::new(id.to_string())?,
+            id: ClientId::new(client_id)?,
             vm,
             signer,
         })
