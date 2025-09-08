@@ -20,14 +20,12 @@ use std::fmt::Display;
 use std::{fmt, ops::Deref};
 use url::Url;
 
-pub const DID: &str = "did";
-/// Deprecated, use `https` instead.
-pub const ENTITY_ID: &str = "entity_id";
-pub const HTTPS: &str = "https";
+pub const DECENTRALIZED_IDENTIFIER: &str = "decentralized_identifier";
+pub const OPENID_FEDERATION: &str = "openid_federation";
 pub const PREREGISTERED: &str = "pre-registered";
 pub const REDIRECT_URI: &str = "redirect_uri";
 pub const VERIFIER_ATTESTATION: &str = "verifier_attestation";
-pub const WEB_ORIGIN: &str = "web-origin";
+pub const ORIGIN: &str = "origin";
 pub const X509_SAN_DNS: &str = "x509_san_dns";
 pub const X509_HASH: &str = "x509_hash";
 
@@ -54,16 +52,7 @@ impl ClientId {
         }
 
         let scheme = ClientIdScheme::try_from(parts[0].to_string())?;
-        let id = match scheme {
-            ClientIdScheme::Did | ClientIdScheme::Https => client_id.clone(),
-            ClientIdScheme::PreRegistered
-            | ClientIdScheme::RedirectUri
-            | ClientIdScheme::X509SanDns
-            | ClientIdScheme::EntityId
-            | ClientIdScheme::WebOrigin
-            | ClientIdScheme::VerifierAttestation
-            | ClientIdScheme::X509Hash => parts[1].to_string(),
-        };
+        let id = parts[1].to_string();
         Ok(Self { id, scheme })
     }
     pub fn get_scheme(&self) -> &ClientIdScheme {
@@ -75,19 +64,7 @@ impl ClientId {
     }
 
     pub fn get_full_id(&self) -> String {
-        let id = match self.scheme {
-            ClientIdScheme::Did | ClientIdScheme::EntityId => self.get_id().to_owned(),
-            ClientIdScheme::Https
-            | ClientIdScheme::PreRegistered
-            | ClientIdScheme::RedirectUri
-            | ClientIdScheme::VerifierAttestation
-            | ClientIdScheme::WebOrigin
-            | ClientIdScheme::X509SanDns
-            | ClientIdScheme::X509Hash => {
-                format!("{}:{}", self.get_scheme().to_string(), self.get_id())
-            }
-        };
-        id
+        format!("{}:{}", self.get_scheme().to_string(), self.get_id())
     }
 }
 
@@ -111,13 +88,12 @@ impl From<ClientId> for Json {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientIdScheme {
-    Did,
-    EntityId,
-    Https,
+    DecentralizedIdentifier,
+    OpenidFederation,
     PreRegistered,
     RedirectUri,
     VerifierAttestation,
-    WebOrigin,
+    Origin,
     X509SanDns,
     X509Hash,
 }
@@ -126,13 +102,12 @@ impl TryFrom<String> for ClientIdScheme {
     type Error = Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.as_str() {
-            DID => Ok(ClientIdScheme::Did),
-            ENTITY_ID => Ok(ClientIdScheme::EntityId),
-            HTTPS => Ok(ClientIdScheme::Https),
+            DECENTRALIZED_IDENTIFIER => Ok(ClientIdScheme::DecentralizedIdentifier),
+            OPENID_FEDERATION => Ok(ClientIdScheme::OpenidFederation),
             PREREGISTERED => Ok(ClientIdScheme::PreRegistered),
             REDIRECT_URI => Ok(ClientIdScheme::RedirectUri),
             VERIFIER_ATTESTATION => Ok(ClientIdScheme::VerifierAttestation),
-            WEB_ORIGIN => Ok(ClientIdScheme::WebOrigin),
+            ORIGIN => Ok(ClientIdScheme::Origin),
             X509_SAN_DNS => Ok(ClientIdScheme::X509SanDns),
             X509_HASH => Ok(ClientIdScheme::X509Hash),
             _ => Err(anyhow!(
@@ -145,13 +120,12 @@ impl TryFrom<String> for ClientIdScheme {
 impl From<ClientIdScheme> for String {
     fn from(value: ClientIdScheme) -> Self {
         match value {
-            ClientIdScheme::Did => DID.to_string(),
-            ClientIdScheme::EntityId => ENTITY_ID.to_string(),
-            ClientIdScheme::Https => HTTPS.to_string(),
+            ClientIdScheme::DecentralizedIdentifier => DECENTRALIZED_IDENTIFIER.to_string(),
+            ClientIdScheme::OpenidFederation => OPENID_FEDERATION.to_string(),
             ClientIdScheme::PreRegistered => PREREGISTERED.to_string(),
             ClientIdScheme::RedirectUri => REDIRECT_URI.to_string(),
             ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION.to_string(),
-            ClientIdScheme::WebOrigin => WEB_ORIGIN.to_string(),
+            ClientIdScheme::Origin => ORIGIN.to_string(),
             ClientIdScheme::X509SanDns => X509_SAN_DNS.to_string(),
             ClientIdScheme::X509Hash => X509_HASH.to_string(),
         }
@@ -876,15 +850,15 @@ mod test {
         "redirect_uri",
         "https://client.example.org/cb"
     )]
-    #[case("did:web:someid", "did", "did:web:someid")]
+    #[case("decentralized_identifier:did:web:someid", "decentralized_identifier", "did:web:someid")]
     #[case(
         "x509_san_dns:client.example.org",
         "x509_san_dns",
         "client.example.org"
     )]
     #[case(
-        "https://client.example.org/cb",
-        "https",
+        "openid_federation:https://client.example.org/cb",
+        "openid_federation",
         "https://client.example.org/cb"
     )]
     #[case(

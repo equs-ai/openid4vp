@@ -37,13 +37,13 @@ pub trait Client: Debug {
 
 /// A [Client] with the `did` Client Identifier.
 #[derive(Debug, Clone)]
-pub struct DIDClient<S: Signer> {
+pub struct DecentralizedIdentifierClient<S: Signer> {
     id: ClientId,
     vm: String,
     signer: S,
 }
 
-impl<S: Signer> DIDClient<S> {
+impl<S: Signer> DecentralizedIdentifierClient<S> {
     pub async fn new(vm: String, signer: S, resolver: impl JWKResolver) -> Result<Self> {
         let (id, _f) = vm.rsplit_once('#').context(format!(
             "expected a DID verification method, received '{vm}'"
@@ -146,13 +146,13 @@ impl X509Variant {
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-impl<S: Signer + WasmNotSync> Client for DIDClient<S> {
+impl<S: Signer + WasmNotSync> Client for DecentralizedIdentifierClient<S> {
     fn id(&self) -> &ClientId {
         &self.id
     }
 
     fn scheme(&self) -> ClientIdScheme {
-        ClientIdScheme::Did
+        ClientIdScheme::DecentralizedIdentifier
     }
 
     async fn generate_request_object_jwt(

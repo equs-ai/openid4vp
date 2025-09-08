@@ -703,8 +703,7 @@ mod tests {
     fn get_json_for_presentation_definition() -> AuthorizationRequestObject {
         serde_json::from_value(json!({
           "response_type": "vp_token",
-          "client_id": "https://verifier.example.org",
-          "client_id_scheme": "redirect_uri",
+          "client_id": "redirect_uri:https://verifier.example.org",
           "redirect_uri": "https://verifier.example.org/callback",
           "scope": "openid",
           "nonce": "n-0S6_WzA2Mj",
@@ -756,8 +755,7 @@ mod tests {
         serde_json::from_value(
             json!({
               "response_type": "vp_token",
-              "client_id": "https://verifier.example.org",
-              "client_id_scheme": "redirect_uri",
+              "client_id": "redirect_uri:https://verifier.example.org",
               "redirect_uri": "https://verifier.example.org/callback",
               "scope": "openid",
               "nonce": "n-0S6_WzA2Mj",
@@ -780,8 +778,7 @@ mod tests {
     fn get_json_for_dcql() -> AuthorizationRequestObject {
         serde_json::from_value(json!({
               "type": "vp_token",
-              "client_id": "https://verifier.example.org",
-              "client_id_scheme": "redirect_uri",
+              "client_id": "redirect_uri:https://verifier.example.org",
               "response_uri": "https://verifier.example.org/response",
               "response_type": "vp_token",
               "response_mode": "direct_post",
@@ -888,8 +885,7 @@ mod tests {
         serde_json::from_value(
             json!({
               "response_type": "vp_token",
-              "client_id": "https://verifier.example.org",
-              "client_id_scheme": "redirect_uri",
+              "client_id": "redirect_uri:https://verifier.example.org",
               "redirect_uri": "https://verifier.example.org/callback",
               "scope": "openid",
               "nonce": "n-0S6_WzA2Mj",
