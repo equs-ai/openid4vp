@@ -29,7 +29,7 @@ pub const REDIRECT_URI: &str = "redirect_uri";
 pub const VERIFIER_ATTESTATION: &str = "verifier_attestation";
 pub const WEB_ORIGIN: &str = "web-origin";
 pub const X509_SAN_DNS: &str = "x509_san_dns";
-pub const X509_SAN_URI: &str = "x509_san_uri";
+pub const X509_HASH: &str = "x509_hash";
 
 #[derive(Debug, Clone)]
 pub struct ClientId {
@@ -62,7 +62,7 @@ impl ClientId {
             | ClientIdScheme::EntityId
             | ClientIdScheme::WebOrigin
             | ClientIdScheme::VerifierAttestation
-            | ClientIdScheme::X509SanUri => parts[1].to_string(),
+            | ClientIdScheme::X509Hash => parts[1].to_string(),
         };
         Ok(Self { id, scheme })
     }
@@ -83,7 +83,7 @@ impl ClientId {
             | ClientIdScheme::VerifierAttestation
             | ClientIdScheme::WebOrigin
             | ClientIdScheme::X509SanDns
-            | ClientIdScheme::X509SanUri => {
+            | ClientIdScheme::X509Hash => {
                 format!("{}:{}", self.get_scheme().to_string(), self.get_id())
             }
         };
@@ -119,7 +119,7 @@ pub enum ClientIdScheme {
     VerifierAttestation,
     WebOrigin,
     X509SanDns,
-    X509SanUri,
+    X509Hash,
 }
 
 impl TryFrom<String> for ClientIdScheme {
@@ -134,7 +134,7 @@ impl TryFrom<String> for ClientIdScheme {
             VERIFIER_ATTESTATION => Ok(ClientIdScheme::VerifierAttestation),
             WEB_ORIGIN => Ok(ClientIdScheme::WebOrigin),
             X509_SAN_DNS => Ok(ClientIdScheme::X509SanDns),
-            X509_SAN_URI => Ok(ClientIdScheme::X509SanUri),
+            X509_HASH => Ok(ClientIdScheme::X509Hash),
             _ => Err(anyhow!(
                 "Given client id scheme is not supported: {}",
                 value
@@ -153,7 +153,7 @@ impl From<ClientIdScheme> for String {
             ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION.to_string(),
             ClientIdScheme::WebOrigin => WEB_ORIGIN.to_string(),
             ClientIdScheme::X509SanDns => X509_SAN_DNS.to_string(),
-            ClientIdScheme::X509SanUri => X509_SAN_URI.to_string(),
+            ClientIdScheme::X509Hash => X509_HASH.to_string(),
         }
     }
 }

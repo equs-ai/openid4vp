@@ -114,7 +114,7 @@ pub trait RequestVerifier {
 
     /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_dns`.
     ///
-    /// See default implementation [x509_san_uri].
+    /// See default implementation [x509_hash].
     async fn x509_san_dns(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -127,17 +127,17 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_uri`.
+    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_hash`.
     ///
-    /// See default implementation [x509_san_uri].
-    async fn x509_san_uri(
+    /// See default implementation [x509_hash].
+    async fn x509_hash(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
-            "'x509_san_uri' client verification is not supported",
+            "'x509_hash' client verification is not supported",
             state.clone(),
         ))
     }
@@ -176,8 +176,8 @@ where
                     wallet.verifier_attestation(&request, jwt).await?
                 }
                 ClientIdScheme::WebOrigin => wallet.web_origin(&request, jwt).await?,
-                ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
-                ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
+                ClientIdScheme::X509SanDns => wallet.x509_hash(&request, jwt).await?,
+                ClientIdScheme::X509Hash => wallet.x509_hash(&request, jwt).await?,
                 //  request cannot be signed for ClientIdScheme::RedirectUri. link: https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-defined-client-identifier-s
                 ClientIdScheme::RedirectUri => {
                     return Err(Error::protocol(
