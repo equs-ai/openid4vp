@@ -114,7 +114,7 @@ impl X509Client {
             };
             id
         };
-        
+
         let client_id = if variant == X509Variant::Hash {
             format!("x509_hash:{}", id)
         } else {

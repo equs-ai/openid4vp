@@ -850,7 +850,11 @@ mod test {
         "redirect_uri",
         "https://client.example.org/cb"
     )]
-    #[case("decentralized_identifier:did:web:someid", "decentralized_identifier", "did:web:someid")]
+    #[case(
+        "decentralized_identifier:did:web:someid",
+        "decentralized_identifier",
+        "did:web:someid"
+    )]
     #[case(
         "x509_san_dns:client.example.org",
         "x509_san_dns",

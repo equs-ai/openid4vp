@@ -168,7 +168,9 @@ where
                     .try_into()?;
 
             match request.client_id().get_scheme() {
-                ClientIdScheme::DecentralizedIdentifier => wallet.decentralized_identifier(&request, jwt).await?,
+                ClientIdScheme::DecentralizedIdentifier => {
+                    wallet.decentralized_identifier(&request, jwt).await?
+                }
                 ClientIdScheme::OpenidFederation => wallet.openid_federation(&request, jwt).await?,
                 ClientIdScheme::PreRegistered => wallet.preregistered(&request, jwt).await?,
                 ClientIdScheme::VerifierAttestation => {
