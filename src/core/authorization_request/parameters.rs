@@ -95,7 +95,7 @@ impl<'de> Deserialize<'de> for ClientId {
     where
         D: serde::Deserializer<'de>,
     {
-        let s: &str = Deserialize::deserialize(deserializer)?;
+        let s: String = Deserialize::deserialize(deserializer)?;
         let mut parts = s.splitn(2, ':');
 
         let scheme = parts
