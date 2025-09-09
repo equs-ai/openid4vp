@@ -14,7 +14,7 @@ use base64::engine::general_purpose;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use base64::Engine;
 use p256::elliptic_curve::rand_core::RngCore;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{Value as Json, Value};
 use std::fmt::Display;
 use std::{fmt, ops::Deref};
@@ -29,7 +29,7 @@ pub const ORIGIN: &str = "origin";
 pub const X509_SAN_DNS: &str = "x509_san_dns";
 pub const X509_HASH: &str = "x509_hash";
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct ClientId {
     id: String,
     scheme: ClientIdScheme,
@@ -102,6 +102,16 @@ impl<'de> Deserialize<'de> for ClientId {
         Ok(Self::new(format!("{}:{}", scheme, id)).map_err(serde::de::Error::custom)?)
     }
 }
+
+impl Serialize for ClientId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.get_full_id())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ClientIdScheme {
     DecentralizedIdentifier,
