@@ -77,10 +77,7 @@ impl TryFrom<Json> for ClientId {
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
         let val_str = value.as_str().ok_or(anyhow!("client_id is not a string"))?;
-        let mut parts = val_str.split(':');
-        let scheme = parts.next().ok_or(anyhow!("client_id is not a string"))?;
-        let id = parts.next().ok_or(anyhow!("client_id is not a string"))?;
-        Self::new(format!("{}:{}", scheme, id))
+        Self::new(val_str.to_string())
     }
 }
 
