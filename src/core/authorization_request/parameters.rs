@@ -78,7 +78,9 @@ impl TryFrom<Json> for ClientId {
     fn try_from(value: Json) -> Result<Self, Self::Error> {
         if let Value::String(val) = value {
             Self::new(val)
-        } else { Err(anyhow!("client_id is not a string")) }
+        } else {
+            Err(anyhow!("client_id is not a string"))
+        }
     }
 }
 
@@ -96,8 +98,14 @@ impl<'de> Deserialize<'de> for ClientId {
         let s: &str = Deserialize::deserialize(deserializer)?;
         let mut parts = s.splitn(2, ':');
 
-        let scheme = parts.next().ok_or_else(|| serde::de::Error::custom("missing scheme"))?.to_string();
-        let id = parts.next().ok_or_else(|| serde::de::Error::custom("missing id"))?.to_string();
+        let scheme = parts
+            .next()
+            .ok_or_else(|| serde::de::Error::custom("missing client id scheme"))?
+            .to_string();
+        let id = parts
+            .next()
+            .ok_or_else(|| serde::de::Error::custom("missing id from the client_id"))?
+            .to_string();
 
         Ok(Self::new(format!("{}:{}", scheme, id)).map_err(serde::de::Error::custom)?)
     }
@@ -111,20 +119,6 @@ impl Serialize for ClientId {
         serializer.serialize_str(&self.get_full_id())
     }
 }
-
-impl TryFrom<String> for ClientId {
-    type Error = Error;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        ClientId::new(value)
-    }
-}
-
-impl From<ClientId> for String {
-    fn from(value: ClientId) -> Self {
-        value.get_full_id()
-    }
-}
-
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ClientIdScheme {
