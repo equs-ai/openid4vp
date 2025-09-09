@@ -14,7 +14,7 @@ use x509_cert::{
     Certificate,
 };
 
-use crate::core::authorization_request::parameters::DECENTRALIZED_IDENTIFIER;
+use crate::core::authorization_request::parameters::{DECENTRALIZED_IDENTIFIER, REDIRECT_URI};
 use crate::core::authorization_request::{
     parameters::{ClientId, ClientIdScheme},
     AuthorizationRequestObject,
@@ -218,8 +218,11 @@ pub struct RedirectUriClient {
 }
 
 impl RedirectUriClient {
-    pub fn new(id: ClientId) -> Self {
-        Self { id }
+    pub fn new(id: String) -> Result<Self> {
+        let client_id = format!("{}:{}", REDIRECT_URI, id);
+        Ok(Self {
+            id: ClientId::new(client_id)?,
+        })
     }
 }
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
