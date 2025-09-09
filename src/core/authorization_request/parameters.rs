@@ -112,6 +112,20 @@ impl Serialize for ClientId {
     }
 }
 
+impl TryFrom<String> for ClientId {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        ClientId::new(value)
+    }
+}
+
+impl From<ClientId> for String {
+    fn from(value: ClientId) -> Self {
+        value.get_full_id()
+    }
+}
+
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ClientIdScheme {
     DecentralizedIdentifier,
