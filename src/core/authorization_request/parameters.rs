@@ -29,7 +29,7 @@ pub const ORIGIN: &str = "origin";
 pub const X509_SAN_DNS: &str = "x509_san_dns";
 pub const X509_HASH: &str = "x509_hash";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ClientId {
     id: String,
     scheme: ClientIdScheme,
@@ -88,6 +88,20 @@ impl From<ClientId> for Json {
     }
 }
 
+impl<'de> Deserialize<'de> for ClientId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        let mut parts = s.splitn(2, ':');
+
+        let scheme = parts.next().ok_or_else(|| serde::de::Error::custom("missing scheme"))?.to_string();
+        let id = parts.next().ok_or_else(|| serde::de::Error::custom("missing id"))?.to_string();
+
+        Ok(Self::new(format!("{}:{}", scheme, id)).map_err(serde::de::Error::custom)?)
+    }
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ClientIdScheme {
     DecentralizedIdentifier,
