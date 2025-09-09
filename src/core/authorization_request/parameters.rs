@@ -15,7 +15,7 @@ use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use base64::Engine;
 use p256::elliptic_curve::rand_core::RngCore;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as Json;
+use serde_json::{Value as Json, Value};
 use std::fmt::Display;
 use std::{fmt, ops::Deref};
 use url::Url;
@@ -76,8 +76,9 @@ impl TryFrom<Json> for ClientId {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        let val_str = value.as_str().ok_or(anyhow!("client_id is not a string"))?;
-        Self::new(val_str.to_string())
+        if let Value::String(val) = value {
+            Self::new(val)
+        } else { Err(anyhow!("client_id is not a string")) }
     }
 }
 
