@@ -29,7 +29,7 @@ pub const ORIGIN: &str = "origin";
 pub const X509_SAN_DNS: &str = "x509_san_dns";
 pub const X509_HASH: &str = "x509_hash";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientId {
     id: String,
     scheme: ClientIdScheme,
@@ -86,7 +86,7 @@ impl From<ClientId> for Json {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ClientIdScheme {
     DecentralizedIdentifier,
     OpenidFederation,
