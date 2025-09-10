@@ -226,7 +226,7 @@ where
     validate_response_type(request, wallet_metadata)?;
 
     let client_metadata = ClientMetadata::resolve(request).await?;
-    validate_vp_formats(&client_metadata, wallet_metadata, state.clone())?;
+    validate_vp_formats_supported(&client_metadata, wallet_metadata, state.clone())?;
 
     let response_mode = request.get::<ResponseMode>().parsing_error()?;
 
@@ -323,7 +323,7 @@ fn validate_response_type(
     Ok(())
 }
 
-fn validate_vp_formats(
+fn validate_vp_formats_supported(
     metadata: &ClientMetadata,
     wallet_metadata: &WalletMetadata,
     state: Option<String>,

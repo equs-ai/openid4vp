@@ -234,7 +234,7 @@ impl TransactionDataItem {
 /// It MUST be UTF-8 encoded. The following metadata parameters MAY be used:
 ///
 /// jwks: OPTIONAL. A JWKS as defined in [RFC7591]. It MAY contain one or more public keys, such as those used by the Wallet as an input to a key agreement that may be used for encryption of the Authorization Response (see Section 7.3), or where the Wallet will require the public key of the Verifier to generate the Verifiable Presentation. This allows the Verifier to pass ephemeral keys specific to this Authorization Request. Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
-/// vp_formats: REQUIRED when not available to the Wallet via another mechanism. As defined in Section 10.1.
+/// vp_formats_supported: REQUIRED when not available to the Wallet via another mechanism. As defined in Section 10.1.
 /// authorization_signed_response_alg: OPTIONAL. As defined in [JARM].
 /// authorization_encrypted_response_alg: OPTIONAL. As defined in [JARM].
 /// authorization_encrypted_response_enc: OPTIONAL. As defined in [JARM].
@@ -305,13 +305,15 @@ impl ClientMetadata {
 
     /// Return the `VpFormats` from the `client_metadata` field.
     ///
-    /// vp_formats: REQUIRED when not available to the Wallet via another mechanism.
+    /// vp_formats_supported: REQUIRED when not available to the Wallet via another mechanism.
     ///
     /// As defined in [Section 10.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#client_metadata_parameters).
     ///
     /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.2
     pub fn vp_formats_supported(&self) -> Result<VpFormatsSupported, Error> {
-        self.0.get().ok_or(anyhow!("missing vp_formats_supported"))?
+        self.0
+            .get()
+            .ok_or(anyhow!("missing vp_formats_supported"))?
     }
 
     /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
@@ -422,7 +424,7 @@ impl Deref for Nonce {
     }
 }
 
-impl std::fmt::Display for Nonce {
+impl Display for Nonce {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
@@ -871,7 +873,7 @@ impl TryFrom<String> for HashAlgorithm {
 #[cfg(test)]
 mod test {
     use crate::core::authorization_request::parameters::{
-        ClientId, ClientIdScheme, HashAlgorithm, TransactionDataItem,
+        ClientId, ClientIdScheme, ClientMetadata, HashAlgorithm, TransactionDataItem,
     };
     use crate::core::authorization_request::ResolvedPresentationQuery;
     use crate::core::dcql::DcqlCredential;
