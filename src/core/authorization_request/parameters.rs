@@ -310,8 +310,8 @@ impl ClientMetadata {
     /// As defined in [Section 10.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#client_metadata_parameters).
     ///
     /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.2
-    pub fn vp_formats(&self) -> Result<VpFormatsSupported, Error> {
-        self.0.get().ok_or(anyhow!("missing vp_formats"))?
+    pub fn vp_formats_supported(&self) -> Result<VpFormatsSupported, Error> {
+        self.0.get().ok_or(anyhow!("missing vp_formats_supported"))?
     }
 
     /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
