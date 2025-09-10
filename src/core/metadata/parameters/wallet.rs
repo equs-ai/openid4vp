@@ -336,7 +336,7 @@ mod test {
             },
             "client_id_schemes_supported": [
                 "redirect_uri",
-                "x509_san_uri"
+                "x509_hash"
             ],
             "request_object_signing_alg_values_supported": [
               "ES256"
@@ -394,7 +394,7 @@ mod test {
 
     #[test]
     fn client_id_schemes_supported() {
-        let exp = [ClientIdScheme::RedirectUri, ClientIdScheme::X509SanUri];
+        let exp = [ClientIdScheme::RedirectUri, ClientIdScheme::X509Hash];
         let ClientIdSchemesSupported(v) = metadata().get().unwrap().unwrap();
         assert!(exp.iter().all(|x| v.contains(x)));
         assert!(v.iter().all(|x| exp.contains(x)));

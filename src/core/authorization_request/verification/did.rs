@@ -10,7 +10,7 @@ use serde_json::{Map, Value as Json};
 
 use ssi::jwk::JWKResolver;
 
-/// Default implementation of request validation for `client_id_scheme` `did`.
+/// Default implementation of request validation for `client_id_scheme` `decentralized_identifier`.
 pub async fn verify_with_resolver(
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,

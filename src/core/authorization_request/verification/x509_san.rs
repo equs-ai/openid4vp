@@ -14,14 +14,14 @@ use crate::{
         metadata::{parameters::wallet::RequestObjectSigningAlgValuesSupported, WalletMetadata},
         object::ParsingErrorContext,
     },
-    verifier::client::X509SanVariant,
+    verifier::client::X509Variant,
 };
 
 use super::verifier::Verifier;
 
 /// Default implementation of request validation for `client_id_scheme` `x509_san_dns`.
 pub fn validate<V: Verifier>(
-    x509_san_variant: X509SanVariant,
+    x509_san_variant: X509Variant,
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,
     request_jwt: String,
@@ -84,15 +84,15 @@ pub fn validate<V: Verifier>(
         })
         .flatten()
         .filter_map(|gn| match (gn, x509_san_variant) {
-            (GeneralName::DnsName(uri), X509SanVariant::Dns) => Some(uri.to_string()),
-            (gn, X509SanVariant::Dns) => {
+            (GeneralName::DnsName(uri), X509Variant::SanDns) => Some(uri.to_string()),
+            (gn, X509Variant::SanDns) => {
                 debug!("found non-DNS SAN: {gn:?}");
                 None
             }
-            (GeneralName::UniformResourceIdentifier(uri), X509SanVariant::Uri) => {
+            (GeneralName::UniformResourceIdentifier(uri), X509Variant::Hash) => {
                 Some(uri.to_string())
             }
-            (gn, X509SanVariant::Uri) => {
+            (gn, X509Variant::Hash) => {
                 debug!("found non-URI SAN: {gn:?}");
                 None
             }
