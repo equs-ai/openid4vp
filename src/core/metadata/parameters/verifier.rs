@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VpFormats(pub ClaimFormatMap);
+pub struct VpFormatsSupported(pub ClaimFormatMap);
 
-impl VpFormats {
+impl VpFormatsSupported {
     /// Returns a boolean to denote whether a particular pair of format and security method
     /// are supported in the VP formats. A security method could be a JOSE algorithm, a COSE
     /// algorithm, a Cryptosuite, etc.
@@ -37,11 +37,11 @@ impl VpFormats {
     }
 }
 
-impl TypedParameter for VpFormats {
-    const KEY: &'static str = "vp_formats";
+impl TypedParameter for VpFormatsSupported {
+    const KEY: &'static str = "vp_formats_supported";
 }
 
-impl TryFrom<Json> for VpFormats {
+impl TryFrom<Json> for VpFormatsSupported {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
@@ -49,10 +49,10 @@ impl TryFrom<Json> for VpFormats {
     }
 }
 
-impl TryFrom<VpFormats> for Json {
+impl TryFrom<VpFormatsSupported> for Json {
     type Error = Error;
 
-    fn try_from(value: VpFormats) -> Result<Json, Self::Error> {
+    fn try_from(value: VpFormatsSupported) -> Result<Json, Self::Error> {
         serde_json::to_value(value.0).context("Failed to serialize VpFormats")
     }
 }
@@ -196,7 +196,7 @@ mod test {
             "authorization_encrypted_response_alg":"ECDH-ES",
             "authorization_encrypted_response_enc":"A256GCM",
             "require_signed_request_object":true,
-            "vp_formats":{ "mso_mdoc":{} }
+            "vp_formats_supported":{ "mso_mdoc":{} }
         }
         ))
         .unwrap()
@@ -204,7 +204,7 @@ mod test {
 
     #[test]
     fn vp_formats() {
-        let VpFormats(formats) = metadata().get().unwrap().unwrap();
+        let VpFormatsSupported(formats) = metadata().get().unwrap().unwrap();
 
         let mso_doc = formats
             .get(&ClaimFormatDesignation::MsoMDoc)

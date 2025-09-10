@@ -4,7 +4,7 @@ use crate::core::error::Error::Internal;
 use crate::core::{
     metadata::parameters::verifier::{
         AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
-        AuthorizationSignedResponseAlg, JWKs, VpFormats,
+        AuthorizationSignedResponseAlg, JWKs, VpFormatsSupported,
     },
     object::{TypedParameter, UntypedObject},
 };
@@ -310,7 +310,7 @@ impl ClientMetadata {
     /// As defined in [Section 10.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#client_metadata_parameters).
     ///
     /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.2
-    pub fn vp_formats(&self) -> Result<VpFormats, Error> {
+    pub fn vp_formats(&self) -> Result<VpFormatsSupported, Error> {
         self.0.get().ok_or(anyhow!("missing vp_formats"))?
     }
 
