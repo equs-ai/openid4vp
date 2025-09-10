@@ -29,7 +29,7 @@ pub const ORIGIN: &str = "origin";
 pub const X509_SAN_DNS: &str = "x509_san_dns";
 pub const X509_HASH: &str = "x509_hash";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClientId {
     id: String,
     scheme: ClientIdScheme,
