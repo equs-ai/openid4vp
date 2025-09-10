@@ -101,7 +101,7 @@ pub enum PresentationDefinitionIndirection {
 }
 
 /// A common enum type to define either 'dcql_query' and 'presentation_definition'
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ResolvedPresentationQuery {
     #[serde(rename = "dcql_query")]
     DCQL(DCQL),
