@@ -246,7 +246,7 @@ impl TransactionDataItem {
 ///
 /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.4
 ///
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClientMetadata(pub UntypedObject);
 
 impl TypedParameter for ClientMetadata {
