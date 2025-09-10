@@ -84,44 +84,20 @@ impl From<JWKs> for Json {
 }
 
 #[derive(Debug, Clone)]
-pub struct RequireSignedRequestObject(pub bool);
-
-impl TypedParameter for RequireSignedRequestObject {
-    const KEY: &'static str = "require_signed_request_object";
+pub struct EncryptedResponseEncValuesSupported(pub Vec<String>);
+impl TypedParameter for EncryptedResponseEncValuesSupported {
+    const KEY: &'static str = "encrypted_response_enc_values_supported";
 }
-
-impl TryFrom<Json> for RequireSignedRequestObject {
+impl TryFrom<Json> for EncryptedResponseEncValuesSupported {
     type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
+    fn try_from(value: Json) -> Result<EncryptedResponseEncValuesSupported, Error> {
         Ok(Self(serde_json::from_value(value)?))
     }
 }
 
-impl From<RequireSignedRequestObject> for Json {
-    fn from(value: RequireSignedRequestObject) -> Json {
-        Json::Bool(value.0)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AuthorizationEncryptedResponseAlg(pub String);
-
-impl TypedParameter for AuthorizationEncryptedResponseAlg {
-    const KEY: &'static str = "authorization_encrypted_response_alg";
-}
-
-impl TryFrom<Json> for AuthorizationEncryptedResponseAlg {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(Self(serde_json::from_value(value)?))
-    }
-}
-
-impl From<AuthorizationEncryptedResponseAlg> for Json {
-    fn from(value: AuthorizationEncryptedResponseAlg) -> Json {
-        Json::String(value.0)
+impl From<EncryptedResponseEncValuesSupported> for Json {
+    fn from(value: EncryptedResponseEncValuesSupported) -> Json {
+        Json::Array(value.0.into_iter().map(Json::String).collect())
     }
 }
 
@@ -142,6 +118,27 @@ impl TryFrom<Json> for AuthorizationEncryptedResponseEnc {
 
 impl From<AuthorizationEncryptedResponseEnc> for Json {
     fn from(value: AuthorizationEncryptedResponseEnc) -> Json {
+        Json::String(value.0)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthorizationEncryptedResponseAlg(pub String);
+
+impl TypedParameter for AuthorizationEncryptedResponseAlg {
+    const KEY: &'static str = "authorization_encrypted_response_alg";
+}
+
+impl TryFrom<Json> for AuthorizationEncryptedResponseAlg {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(Self(serde_json::from_value(value)?))
+    }
+}
+
+impl From<AuthorizationEncryptedResponseAlg> for Json {
+    fn from(value: AuthorizationEncryptedResponseAlg) -> Json {
         Json::String(value.0)
     }
 }
@@ -193,9 +190,6 @@ mod test {
                   }
                ]
             },
-            "authorization_encrypted_response_alg":"ECDH-ES",
-            "authorization_encrypted_response_enc":"A256GCM",
-            "require_signed_request_object":true,
             "vp_formats_supported":{ "mso_mdoc":{} }
         }
         ))
@@ -234,26 +228,5 @@ mod test {
         );
         assert_eq!(jwk.get("use").unwrap(), "enc");
         assert_eq!(jwk.get("kid").unwrap(), "1");
-    }
-
-    #[test]
-    fn require_signed_request_object() {
-        let exp = true;
-        let RequireSignedRequestObject(b) = metadata().get().unwrap().unwrap();
-        assert_eq!(b, exp);
-    }
-
-    #[test]
-    fn authorization_encrypted_response_alg() {
-        let exp = "ECDH-ES";
-        let AuthorizationEncryptedResponseAlg(s) = metadata().get().unwrap().unwrap();
-        assert_eq!(s, exp);
-    }
-
-    #[test]
-    fn authorization_encrypted_response_enc() {
-        let exp = "A256GCM";
-        let AuthorizationEncryptedResponseEnc(s) = metadata().get().unwrap().unwrap();
-        assert_eq!(s, exp);
     }
 }
