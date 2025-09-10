@@ -120,7 +120,7 @@ impl X509Client {
         let client_id = if variant == X509Variant::Hash {
             format!("x509_hash:{}", id)
         } else {
-            format!("x509_san_dns{}", id)
+            format!("x509_san_dns:{}", id)
         };
         Ok(X509Client {
             id: ClientId::new(client_id)?,
