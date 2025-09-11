@@ -30,7 +30,7 @@ pub const X509_HASH: &str = "x509_hash";
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClientId {
     id: String,
-    scheme: ClientIdScheme,
+    prefix: ClientIdPrefix,
 }
 
 impl ClientId {
@@ -45,16 +45,16 @@ impl ClientId {
         if parts.len() == 1 {
             return Ok(Self {
                 id: parts[0].to_string(),
-                scheme: ClientIdScheme::PreRegistered,
+                prefix: ClientIdPrefix::PreRegistered,
             });
         }
 
-        let scheme = ClientIdScheme::try_from(parts[0].to_string())?;
+        let prefix = ClientIdPrefix::try_from(parts[0].to_string())?;
         let id = parts[1].to_string();
-        Ok(Self { id, scheme })
+        Ok(Self { id, prefix })
     }
-    pub fn get_scheme(&self) -> &ClientIdScheme {
-        &self.scheme
+    pub fn get_prefix(&self) -> &ClientIdPrefix {
+        &self.prefix
     }
 
     pub fn get_id(&self) -> String {
@@ -62,7 +62,7 @@ impl ClientId {
     }
 
     pub fn get_full_id(&self) -> String {
-        format!("{}:{}", self.get_scheme().to_string(), self.get_id())
+        format!("{}:{}", self.get_prefix().to_string(), self.get_id())
     }
 }
 
@@ -96,16 +96,16 @@ impl<'de> Deserialize<'de> for ClientId {
         let s: String = Deserialize::deserialize(deserializer)?;
         let mut parts = s.splitn(2, ':');
 
-        let scheme = parts
+        let prefix = parts
             .next()
-            .ok_or_else(|| serde::de::Error::custom("missing client id scheme"))?
+            .ok_or_else(|| serde::de::Error::custom("missing client id prefix"))?
             .to_string();
         let id = parts
             .next()
             .ok_or_else(|| serde::de::Error::custom("missing id from the client_id"))?
             .to_string();
 
-        Ok(Self::new(format!("{}:{}", scheme, id)).map_err(serde::de::Error::custom)?)
+        Ok(Self::new(format!("{}:{}", prefix, id)).map_err(serde::de::Error::custom)?)
     }
 }
 
@@ -119,7 +119,7 @@ impl Serialize for ClientId {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ClientIdScheme {
+pub enum ClientIdPrefix {
     DecentralizedIdentifier,
     OpenidFederation,
     PreRegistered,
@@ -130,47 +130,47 @@ pub enum ClientIdScheme {
     X509Hash,
 }
 
-impl TryFrom<String> for ClientIdScheme {
+impl TryFrom<String> for ClientIdPrefix {
     type Error = Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.as_str() {
-            DECENTRALIZED_IDENTIFIER => Ok(ClientIdScheme::DecentralizedIdentifier),
-            OPENID_FEDERATION => Ok(ClientIdScheme::OpenidFederation),
-            PREREGISTERED => Ok(ClientIdScheme::PreRegistered),
-            REDIRECT_URI => Ok(ClientIdScheme::RedirectUri),
-            VERIFIER_ATTESTATION => Ok(ClientIdScheme::VerifierAttestation),
-            ORIGIN => Ok(ClientIdScheme::Origin),
-            X509_SAN_DNS => Ok(ClientIdScheme::X509SanDns),
-            X509_HASH => Ok(ClientIdScheme::X509Hash),
+            DECENTRALIZED_IDENTIFIER => Ok(ClientIdPrefix::DecentralizedIdentifier),
+            OPENID_FEDERATION => Ok(ClientIdPrefix::OpenidFederation),
+            PREREGISTERED => Ok(ClientIdPrefix::PreRegistered),
+            REDIRECT_URI => Ok(ClientIdPrefix::RedirectUri),
+            VERIFIER_ATTESTATION => Ok(ClientIdPrefix::VerifierAttestation),
+            ORIGIN => Ok(ClientIdPrefix::Origin),
+            X509_SAN_DNS => Ok(ClientIdPrefix::X509SanDns),
+            X509_HASH => Ok(ClientIdPrefix::X509Hash),
             _ => Err(anyhow!(
-                "Given client id scheme is not supported: {}",
+                "Given client id prefix is not supported: {}",
                 value
             )),
         }
     }
 }
-impl From<ClientIdScheme> for String {
-    fn from(value: ClientIdScheme) -> Self {
+impl From<ClientIdPrefix> for String {
+    fn from(value: ClientIdPrefix) -> Self {
         match value {
-            ClientIdScheme::DecentralizedIdentifier => DECENTRALIZED_IDENTIFIER.to_string(),
-            ClientIdScheme::OpenidFederation => OPENID_FEDERATION.to_string(),
-            ClientIdScheme::PreRegistered => PREREGISTERED.to_string(),
-            ClientIdScheme::RedirectUri => REDIRECT_URI.to_string(),
-            ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION.to_string(),
-            ClientIdScheme::Origin => ORIGIN.to_string(),
-            ClientIdScheme::X509SanDns => X509_SAN_DNS.to_string(),
-            ClientIdScheme::X509Hash => X509_HASH.to_string(),
+            ClientIdPrefix::DecentralizedIdentifier => DECENTRALIZED_IDENTIFIER.to_string(),
+            ClientIdPrefix::OpenidFederation => OPENID_FEDERATION.to_string(),
+            ClientIdPrefix::PreRegistered => PREREGISTERED.to_string(),
+            ClientIdPrefix::RedirectUri => REDIRECT_URI.to_string(),
+            ClientIdPrefix::VerifierAttestation => VERIFIER_ATTESTATION.to_string(),
+            ClientIdPrefix::Origin => ORIGIN.to_string(),
+            ClientIdPrefix::X509SanDns => X509_SAN_DNS.to_string(),
+            ClientIdPrefix::X509Hash => X509_HASH.to_string(),
         }
     }
 }
 
-impl Display for ClientIdScheme {
+impl Display for ClientIdPrefix {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", String::from(self.to_owned()))
     }
 }
 
-impl TryFrom<Json> for ClientIdScheme {
+impl TryFrom<Json> for ClientIdPrefix {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
@@ -180,8 +180,8 @@ impl TryFrom<Json> for ClientIdScheme {
     }
 }
 
-impl From<ClientIdScheme> for Json {
-    fn from(value: ClientIdScheme) -> Self {
+impl From<ClientIdPrefix> for Json {
+    fn from(value: ClientIdPrefix) -> Self {
         Json::String(String::from(value))
     }
 }
@@ -797,7 +797,7 @@ impl TryFrom<String> for HashAlgorithm {
 #[cfg(test)]
 mod test {
     use crate::core::authorization_request::parameters::{
-        ClientId, ClientIdScheme, HashAlgorithm, TransactionDataItem,
+        ClientId, ClientIdPrefix, HashAlgorithm, TransactionDataItem,
     };
     use crate::core::authorization_request::ResolvedPresentationQuery;
     use crate::core::dcql::DcqlCredential;
@@ -830,32 +830,32 @@ mod test {
         "verifier_attestation",
         "example-client"
     )]
-    fn test_client_id_scheme_parsing_successfully(
+    fn test_client_id_prefix_parsing_successfully(
         #[case] client_id: String,
-        #[case] scheme: String,
+        #[case] prefix: String,
         #[case] id: &str,
     ) {
         let client_id = ClientId::new(client_id).unwrap();
 
         assert_eq!(
-            ClientIdScheme::try_from(scheme).unwrap(),
-            client_id.get_scheme().to_owned()
+            ClientIdPrefix::try_from(prefix).unwrap(),
+            client_id.get_prefix().to_owned()
         );
         assert_eq!(id, client_id.get_id());
     }
 
     #[rstest]
     #[case("https//verifier.com")]
-    fn client_id_scheme_parsing_successfully_for_preregistered(#[case] id: String) {
+    fn client_id_prefix_parsing_successfully_for_preregistered(#[case] id: String) {
         let client_id = ClientId::new(id.clone()).unwrap();
         assert_eq!(
-            ClientIdScheme::PreRegistered,
-            client_id.get_scheme().to_owned()
+            ClientIdPrefix::PreRegistered,
+            client_id.get_prefix().to_owned()
         );
     }
 
     #[rstest]
-    #[should_panic(expected = "Given client id scheme is not supported")]
+    #[should_panic(expected = "Given client id prefix is not supported")]
     #[case("some:id/something")]
     #[should_panic(expected = "Client ID cannot be empty.")]
     #[case("")]
@@ -865,8 +865,8 @@ mod test {
 
     #[rstest]
     #[case("some:id/something")]
-    #[should_panic(expected = "Given client id scheme is not supported")]
-    fn client_id_parsing_unsuccessfully_unsupported_scheme(#[case] id: String) {
+    #[should_panic(expected = "Given client id prefix is not supported")]
+    fn client_id_parsing_unsuccessfully_unsupported_prefix(#[case] id: String) {
         ClientId::new(id).unwrap();
     }
     #[test]

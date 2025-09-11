@@ -126,7 +126,7 @@ impl ResolvedPresentationQuery {
 }
 
 impl AuthorizationRequest {
-    /// Validate the [AuthorizationRequest] according to the client_id scheme and return the parsed
+    /// Validate the [AuthorizationRequest] according to the client id prefix and return the parsed
     /// [AuthorizationRequestObject].
     ///
     /// Custom wallet metadata can be provided, otherwise the default metadata for this profile is used.

@@ -1,5 +1,5 @@
 use super::{
-    parameters::{ClientIdScheme, ClientMetadata, ResponseMode},
+    parameters::{ClientIdPrefix, ClientMetadata, ResponseMode},
     AuthorizationRequestObject, FetchedAuthorizationRequest,
 };
 use crate::core::authorization_request::parameters::ResponseType;
@@ -11,7 +11,7 @@ use crate::core::{
         verifier::{AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc},
         wallet::{
             AuthorizationEncryptionAlgValuesSupported, AuthorizationEncryptionEncValuesSupported,
-            ClientIdSchemesSupported, VpFormatsSupported,
+            ClientIdPrefixesSupported, VpFormatsSupported,
         },
     },
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
@@ -30,7 +30,7 @@ pub mod x509_san;
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait RequestVerifier {
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `decentralized_identifier`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `decentralized_identifier`.
     ///
     /// See default implementation [decentralized_identifier].
     async fn decentralized_identifier(
@@ -45,7 +45,7 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `openid_federation`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `openid_federation`.
     async fn openid_federation(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -58,7 +58,7 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `pre-registered`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `pre-registered`.
     async fn preregistered(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -71,7 +71,7 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `redirect_uri`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `redirect_uri`.
     ///
     /// See default implementation [redirect_uri].
     async fn redirect_uri(
@@ -86,7 +86,7 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `verifier_attestation`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `verifier_attestation`.
     async fn verifier_attestation(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -99,7 +99,7 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `origin`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `origin`.
     async fn origin(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -112,7 +112,7 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_dns`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `x509_san_dns`.
     ///
     /// See default implementation [x509_san_dns].
     async fn x509_san_dns(
@@ -127,7 +127,7 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_hash`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `x509_hash`.
     ///
     /// See default implementation [x509_hash].
     async fn x509_hash(
@@ -167,23 +167,23 @@ where
                     })?
                     .try_into()?;
 
-            match request.client_id().get_scheme() {
-                ClientIdScheme::DecentralizedIdentifier => {
+            match request.client_id().get_prefix() {
+                ClientIdPrefix::DecentralizedIdentifier => {
                     wallet.decentralized_identifier(&request, jwt).await?
                 }
-                ClientIdScheme::OpenidFederation => wallet.openid_federation(&request, jwt).await?,
-                ClientIdScheme::PreRegistered => wallet.preregistered(&request, jwt).await?,
-                ClientIdScheme::VerifierAttestation => {
+                ClientIdPrefix::OpenidFederation => wallet.openid_federation(&request, jwt).await?,
+                ClientIdPrefix::PreRegistered => wallet.preregistered(&request, jwt).await?,
+                ClientIdPrefix::VerifierAttestation => {
                     wallet.verifier_attestation(&request, jwt).await?
                 }
-                ClientIdScheme::Origin => wallet.origin(&request, jwt).await?,
-                ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
-                ClientIdScheme::X509Hash => wallet.x509_hash(&request, jwt).await?,
-                //  request cannot be signed for ClientIdScheme::RedirectUri. link: https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-defined-client-identifier-s
-                ClientIdScheme::RedirectUri => {
+                ClientIdPrefix::Origin => wallet.origin(&request, jwt).await?,
+                ClientIdPrefix::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
+                ClientIdPrefix::X509Hash => wallet.x509_hash(&request, jwt).await?,
+                //  request cannot be signed for ClientIdPrefix::RedirectUri. link: https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-defined-client-identifier-s
+                ClientIdPrefix::RedirectUri => {
                     return Err(Error::protocol(
-                        ErrorType::WrongClientIdScheme,
-                        "Redirect uri scheme is not supported with signed request type",
+                        ErrorType::WrongClientIdPrefix,
+                        "Redirect uri prefix is not supported with signed request type",
                         None,
                     ));
                 }
@@ -208,16 +208,16 @@ where
     let state = request.state();
     let wallet_metadata = wallet.metadata();
 
-    let client_id_scheme = request.client_id().get_scheme();
+    let client_id_prefix = request.client_id().get_prefix();
     if !wallet_metadata
-        .get_or_default::<ClientIdSchemesSupported>()?
+        .get_or_default::<ClientIdPrefixesSupported>()?
         .0
-        .contains(&client_id_scheme)
+        .contains(&client_id_prefix)
     {
         return Err(Error::protocol_invalid_req(
             &format!(
-                "wallet does not support client_id_scheme '{}'",
-                client_id_scheme.to_string()
+                "wallet does not support client_id_prefix '{}'",
+                client_id_prefix.to_string()
             ),
             state.clone(),
         ));

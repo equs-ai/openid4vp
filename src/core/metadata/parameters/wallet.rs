@@ -1,5 +1,5 @@
 use crate::core::{
-    authorization_request::parameters::{ClientIdScheme, ResponseType},
+    authorization_request::parameters::{ClientIdPrefix, ResponseType},
     credential_format::{ClaimFormatDesignation, ClaimFormatMap},
     object::TypedParameter,
 };
@@ -86,15 +86,14 @@ impl From<ResponseTypesSupported> for Json {
     }
 }
 
-// TODO: Client ID scheme types?
 #[derive(Debug, Clone)]
-pub struct ClientIdSchemesSupported(pub Vec<ClientIdScheme>);
+pub struct ClientIdPrefixesSupported(pub Vec<ClientIdPrefix>);
 
-impl TypedParameter for ClientIdSchemesSupported {
-    const KEY: &'static str = "client_id_schemes_supported";
+impl TypedParameter for ClientIdPrefixesSupported {
+    const KEY: &'static str = "client_id_prefixes_supported";
 }
 
-impl TryFrom<Json> for ClientIdSchemesSupported {
+impl TryFrom<Json> for ClientIdPrefixesSupported {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
@@ -103,20 +102,20 @@ impl TryFrom<Json> for ClientIdSchemesSupported {
         };
         xs.into_iter()
             .map(Json::try_into)
-            .collect::<Result<Vec<ClientIdScheme>>>()
+            .collect::<Result<Vec<ClientIdPrefix>>>()
             .map(Self)
     }
 }
 
-impl From<ClientIdSchemesSupported> for Json {
-    fn from(value: ClientIdSchemesSupported) -> Json {
+impl From<ClientIdPrefixesSupported> for Json {
+    fn from(value: ClientIdPrefixesSupported) -> Json {
         Json::Array(value.0.into_iter().map(Json::from).collect())
     }
 }
 
-impl Default for ClientIdSchemesSupported {
+impl Default for ClientIdPrefixesSupported {
     fn default() -> Self {
-        Self(vec![ClientIdScheme::PreRegistered])
+        Self(vec![ClientIdPrefix::PreRegistered])
     }
 }
 
@@ -334,7 +333,7 @@ mod test {
                 "mso_mdoc": {
                 }
             },
-            "client_id_schemes_supported": [
+            "client_id_prefixes_supported": [
                 "redirect_uri",
                 "x509_hash"
             ],
@@ -393,9 +392,9 @@ mod test {
     }
 
     #[test]
-    fn client_id_schemes_supported() {
-        let exp = [ClientIdScheme::RedirectUri, ClientIdScheme::X509Hash];
-        let ClientIdSchemesSupported(v) = metadata().get().unwrap().unwrap();
+    fn client_id_prefixes_supported() {
+        let exp = [ClientIdPrefix::RedirectUri, ClientIdPrefix::X509Hash];
+        let ClientIdPrefixesSupported(v) = metadata().get().unwrap().unwrap();
         assert!(exp.iter().all(|x| v.contains(x)));
         assert!(v.iter().all(|x| exp.contains(x)));
     }

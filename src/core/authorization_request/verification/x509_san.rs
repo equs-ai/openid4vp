@@ -19,7 +19,7 @@ use crate::{
 
 use super::verifier::Verifier;
 
-/// Default implementation of request validation for `client_id_scheme` `x509_san_dns`.
+/// Default implementation of request validation for `client_id_prefix` `x509_san_dns`.
 pub fn validate<V: Verifier>(
     x509_san_variant: X509Variant,
     wallet_metadata: &WalletMetadata,
@@ -29,7 +29,7 @@ pub fn validate<V: Verifier>(
 ) -> Result<()> {
     let client_id = request_object.client_id().get_id();
     let client_id_source = client_id
-        .strip_prefix(&format!("{}:", String::from(x509_san_variant.to_scheme())))
+        .strip_prefix(&format!("{}:", String::from(x509_san_variant.to_prefix())))
         .unwrap_or(&client_id);
     let (headers_b64, body_b64, sig_b64) = ssi::claims::jws::split_jws(&request_jwt)?;
 

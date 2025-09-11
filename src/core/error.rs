@@ -95,9 +95,9 @@ pub enum ErrorType {
     InvalidRequestUriMethod,
     WalletUnavailable,
     InvalidDCQLFormat,
-    ClientIDSchemeNotGiven,
+    ClientIDPrefixNotGiven,
     InvalidTransactionData,
-    WrongClientIdScheme,
+    WrongClientIdPrefix,
 }
 
 impl Display for ErrorType {
@@ -136,11 +136,11 @@ impl Display for ErrorType {
             ErrorType::InvalidDCQLFormat => {
                 write!(f, "invalid_dcql_format")
             }
-            ErrorType::ClientIDSchemeNotGiven => {
-                write!(f, "client_id_scheme_not_given")
+            ErrorType::ClientIDPrefixNotGiven => {
+                write!(f, "client_id_prefix_not_given")
             }
-            ErrorType::WrongClientIdScheme => {
-                write!(f, "wrong_client_id_scheme")
+            ErrorType::WrongClientIdPrefix => {
+                write!(f, "wrong_client_id_prefix")
             }
             ErrorType::InvalidTransactionData => {
                 write!(f, "invalid_transaction_data")

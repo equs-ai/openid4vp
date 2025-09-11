@@ -13,7 +13,7 @@ use crate::core::{
         AuthorizationRequestObject, RequestIndirection,
     },
     metadata::{
-        parameters::wallet::{AuthorizationEndpoint, ClientIdSchemesSupported},
+        parameters::wallet::{AuthorizationEndpoint, ClientIdPrefixesSupported},
         WalletMetadata,
     },
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
@@ -80,7 +80,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         request_type: RequestType,
     ) -> Result<(Url, Option<String>), Error> {
         let client_id = self.verifier.client.id();
-        let client_id_scheme = self.verifier.client.scheme();
+        let client_id_prefix = self.verifier.client.prefix();
         let _ = self.request_parameters.insert(client_id.clone());
 
         match (
@@ -103,13 +103,13 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         self.validate_response_type(&wallet_metadata)?;
 
         if !wallet_metadata
-            .get_or_default::<ClientIdSchemesSupported>()?
+            .get_or_default::<ClientIdPrefixesSupported>()?
             .0
-            .contains(&client_id_scheme)
+            .contains(&client_id_prefix)
         {
-            let scheme = String::from(client_id_scheme);
+            let prefix = String::from(client_id_prefix);
             return Err(Error::internal(anyhow!(
-                "the wallet does not support the client_id_scheme '{scheme}'"
+                "the wallet does not support the client_id_prefix '{prefix}'"
             )));
         }
 

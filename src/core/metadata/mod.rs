@@ -8,9 +8,9 @@ use super::{
     authorization_request::parameters::ResponseType,
     object::{ParsingErrorContext, UntypedObject},
 };
-use crate::core::authorization_request::parameters::ClientIdScheme;
+use crate::core::authorization_request::parameters::ClientIdPrefix;
 use crate::core::metadata::parameters::wallet::{
-    ClientIdSchemesSupported, IdTokenSigningAlgValuesSupported, IdTokenTypesSupported,
+    ClientIdPrefixesSupported, IdTokenSigningAlgValuesSupported, IdTokenTypesSupported,
     ScopesSupported,
 };
 use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
@@ -30,7 +30,7 @@ pub struct WalletMetadata(
     AuthorizationEndpoint,
     VpFormatsSupported,
     ResponseTypesSupported,
-    ClientIdSchemesSupported,
+    ClientIdPrefixesSupported,
     RequestObjectSigningAlgValuesSupported,
     ScopesSupported,
     SubjectSyntaxTypesSupported,
@@ -92,21 +92,21 @@ impl WalletMetadata {
         Ok(())
     }
 
-    /// Add a client ID scheme to the list of the client ID schemes supported.
+    /// Add a client ID prefix to the list of the client ID prefixes supported.
     ///
-    /// This method will construct a `client_id_schemes_supported` property in the
+    /// This method will construct a `client_id_prefixes_supported` property in the
     /// wallet metadata if none exists previously, otherwise, this method will append
-    /// the client ID schemes to the existing list of the client ID schemes supported.
-    pub fn add_client_id_schemes_supported(
+    /// the client ID prefixes to the existing list of the client ID prefixes supported.
+    pub fn add_client_id_prefixes_supported(
         &mut self,
-        client_id_schemes: &[ClientIdScheme],
+        client_id_prefixes: &[ClientIdPrefix],
     ) -> Result<()> {
-        let mut supported = self.0.get_or_default::<ClientIdSchemesSupported>()?;
+        let mut supported = self.0.get_or_default::<ClientIdPrefixesSupported>()?;
 
-        // Insert the scheme.
-        supported.0.extend_from_slice(client_id_schemes);
+        // Insert the prefix.
+        supported.0.extend_from_slice(client_id_prefixes);
 
-        // Insert the updated client IDs schemes supported.
+        // Insert the updated client IDs prefixes supported.
         self.0.insert(supported);
 
         Ok(())
@@ -117,16 +117,16 @@ impl WalletMetadata {
         &self.3
     }
 
-    /// Return a reference to the supported client_id schemas.
-    pub fn client_id_schema_supported(&self) -> &ClientIdSchemesSupported {
+    /// Return a reference to the supported client_id prefixes.
+    pub fn client_id_prefixes_supported(&self) -> &ClientIdPrefixesSupported {
         &self.4
     }
 
-    /// Check that a client-id-schema is supported.
-    pub fn is_client_id_schema_supported(&self, client_id_scheme: &ClientIdScheme) -> bool {
-        self.client_id_schema_supported()
+    /// Check that a client-id-prefix is supported.
+    pub fn is_client_id_prefix_supported(&self, client_id_prefix: &ClientIdPrefix) -> bool {
+        self.client_id_prefixes_supported()
             .0
-            .contains(client_id_scheme)
+            .contains(client_id_prefix)
     }
 
     /// Return a reference to the supported response types.
@@ -204,7 +204,7 @@ impl TryFrom<UntypedObject> for WalletMetadata {
         let authorization_endpoint = value.get().parsing_error()?;
         let vp_formats_supported = value.get().parsing_error()?;
         let response_types_supported = value.get().parsing_error()?;
-        let client_id_schemes_supported = value.get().parsing_error().unwrap_or_default();
+        let client_id_prefixes_supported = value.get().parsing_error().unwrap_or_default();
         let request_object_signing_alg_values_supported =
             value.get().parsing_error().unwrap_or_default();
         let scopes_supported = value.get().parsing_error().unwrap_or_default();
@@ -217,7 +217,7 @@ impl TryFrom<UntypedObject> for WalletMetadata {
             authorization_endpoint,
             vp_formats_supported,
             response_types_supported,
-            client_id_schemes_supported,
+            client_id_prefixes_supported,
             request_object_signing_alg_values_supported,
             scopes_supported,
             subject_syntax_types_supported,
