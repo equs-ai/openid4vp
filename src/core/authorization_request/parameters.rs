@@ -7,7 +7,7 @@ use crate::core::{
     object::{TypedParameter, UntypedObject},
 };
 use crate::utils::from_string_or_value;
-use anyhow::{anyhow, bail, Error};
+use anyhow::{anyhow, Error};
 use base64::engine::general_purpose;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -558,18 +558,6 @@ impl Display for ResponseMode {
             ResponseMode::Unsupported(u) => u,
         }
         .fmt(f)
-    }
-}
-
-impl ResponseMode {
-    pub fn is_jarm(&self) -> Result<bool, Error> {
-        match self {
-            ResponseMode::DirectPost => Ok(false),
-            ResponseMode::DirectPostJwt => Ok(true),
-            ResponseMode::DCAPI => Ok(false),
-            ResponseMode::DCAPIJwt => Ok(true),
-            ResponseMode::Unsupported(rm) => bail!("unsupported response_mode: {rm}"),
-        }
     }
 }
 

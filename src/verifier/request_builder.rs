@@ -12,10 +12,7 @@ use crate::core::{
         parameters::{ResponseMode, ResponseType},
         AuthorizationRequestObject, RequestIndirection,
     },
-    metadata::{
-        parameters::wallet::{AuthorizationEndpoint, ClientIdPrefixesSupported},
-        WalletMetadata,
-    },
+    metadata::{parameters::wallet::AuthorizationEndpoint, WalletMetadata},
     object::{ParsingErrorContext, TypedParameter, UntypedObject},
     presentation_definition::PresentationDefinition,
 };
@@ -102,11 +99,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         }
         self.validate_response_type(&wallet_metadata)?;
 
-        if !wallet_metadata
-            .get_or_default::<ClientIdPrefixesSupported>()?
-            .0
-            .contains(&client_id_prefix)
-        {
+        if !wallet_metadata.is_client_id_prefix_supported(&client_id_prefix) {
             let prefix = String::from(client_id_prefix);
             return Err(Error::internal(anyhow!(
                 "the wallet does not support the client_id_prefix '{prefix}'"

@@ -276,8 +276,8 @@ impl AuthorizationRequestObject {
                 let item = TransactionDataItem::from_base64url_encoded(&item).map_err(|e| {
                     Error::protocol(
                         ErrorType::InvalidTransactionData,
-                        "The transaction data cannot be parsed: {}",
-                        Some(e.to_string()),
+                        &format!("The transaction data cannot be parsed: {}", e),
+                        self.state(),
                     )
                 })?;
                 items.push(item);

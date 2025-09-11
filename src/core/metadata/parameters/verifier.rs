@@ -102,48 +102,6 @@ impl From<EncryptedResponseEncValuesSupported> for Json {
 }
 
 #[derive(Debug, Clone)]
-pub struct AuthorizationEncryptedResponseEnc(pub String);
-
-impl TypedParameter for AuthorizationEncryptedResponseEnc {
-    const KEY: &'static str = "authorization_encrypted_response_enc";
-}
-
-impl TryFrom<Json> for AuthorizationEncryptedResponseEnc {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(Self(serde_json::from_value(value)?))
-    }
-}
-
-impl From<AuthorizationEncryptedResponseEnc> for Json {
-    fn from(value: AuthorizationEncryptedResponseEnc) -> Json {
-        Json::String(value.0)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AuthorizationEncryptedResponseAlg(pub String);
-
-impl TypedParameter for AuthorizationEncryptedResponseAlg {
-    const KEY: &'static str = "authorization_encrypted_response_alg";
-}
-
-impl TryFrom<Json> for AuthorizationEncryptedResponseAlg {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Ok(Self(serde_json::from_value(value)?))
-    }
-}
-
-impl From<AuthorizationEncryptedResponseAlg> for Json {
-    fn from(value: AuthorizationEncryptedResponseAlg) -> Json {
-        Json::String(value.0)
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct AuthorizationSignedResponseAlg(pub ssi::crypto::Algorithm);
 
 impl TypedParameter for AuthorizationSignedResponseAlg {

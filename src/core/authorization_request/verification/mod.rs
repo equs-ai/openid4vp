@@ -1,5 +1,5 @@
 use super::{
-    parameters::{ClientIdPrefix, ClientMetadata, ResponseMode},
+    parameters::{ClientIdPrefix, ClientMetadata},
     AuthorizationRequestObject, FetchedAuthorizationRequest,
 };
 use crate::core::authorization_request::parameters::ResponseType;
@@ -7,14 +7,8 @@ use crate::core::error::{Error, ErrorType};
 use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
 use crate::core::metadata::WalletMetadata;
 use crate::core::{
-    metadata::parameters::{
-        verifier::{AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc},
-        wallet::{
-            AuthorizationEncryptionAlgValuesSupported, AuthorizationEncryptionEncValuesSupported,
-            ClientIdPrefixesSupported, VpFormatsSupported,
-        },
-    },
-    object::{ParsingErrorContext, TypedParameter, UntypedObject},
+    metadata::parameters::wallet::{ClientIdPrefixesSupported, VpFormatsSupported},
+    object::{ParsingErrorContext, UntypedObject},
 };
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
@@ -228,47 +222,8 @@ where
     let client_metadata = ClientMetadata::resolve(request).await?;
     validate_vp_formats_supported(&client_metadata, wallet_metadata, state.clone())?;
 
-    let response_mode = request.get::<ResponseMode>().parsing_error()?;
-
-    if response_mode.is_jarm()? {
-        let alg = client_metadata
-            .0
-            .get::<AuthorizationEncryptedResponseAlg>()
-            .parsing_error()?;
-        let enc = client_metadata
-            .0
-            .get::<AuthorizationEncryptedResponseEnc>()
-            .parsing_error()?;
-
-        if let Some(supported_algs) =
-            wallet_metadata.get::<AuthorizationEncryptionAlgValuesSupported>()
-        {
-            if !supported_algs?.0.contains(&alg.0) {
-                return Err(Error::protocol_invalid_req(
-                    &format!(
-                        "unsupported {} '{}'",
-                        AuthorizationEncryptedResponseAlg::KEY,
-                        alg.0
-                    ),
-                    state.clone(),
-                ));
-            }
-        }
-        if let Some(supported_encs) =
-            wallet_metadata.get::<AuthorizationEncryptionEncValuesSupported>()
-        {
-            if !supported_encs?.0.contains(&enc.0) {
-                return Err(Error::protocol_invalid_req(
-                    &format!(
-                        "unsupported {} '{}'",
-                        AuthorizationEncryptedResponseEnc::KEY,
-                        enc.0
-                    ),
-                    state.clone(),
-                ));
-            }
-        }
-    }
+    //TODO: Maybe it makes sense to check for algs from jwks of ClientMetadata against authorization_encryption_alg_values_supported of WalletMetadata
+    // and encrypted_response_enc_values_supported of ClientMetadata against authorization_encryption_enc_values_supported of WalletMetadata. But it was not specified
 
     Ok(())
 }
