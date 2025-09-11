@@ -1,61 +1,8 @@
-use crate::core::metadata::ClaimFormatPayload;
 use crate::core::object::TypedParameter;
-use crate::core::{credential_format::ClaimFormatMap, metadata::ClaimFormatDesignation};
 
-use anyhow::{Context, Error};
-use serde::{Deserialize, Serialize};
+use anyhow::Error;
+use serde::Deserialize;
 use serde_json::{Map, Value as Json};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VpFormatsSupported(pub ClaimFormatMap);
-
-impl VpFormatsSupported {
-    /// Returns a boolean to denote whether a particular pair of format and security method
-    /// are supported in the VP formats. A security method could be a JOSE algorithm, a COSE
-    /// algorithm, a Cryptosuite, etc.
-    ///
-    /// NOTE: This method is interested in the security method of the claim format
-    /// payload and not the claim format designation.
-    ///
-    /// For example, the security method would need to match one of the `alg`
-    /// values in the claim format payload.
-    pub fn supports_security_method(
-        &self,
-        format: &ClaimFormatDesignation,
-        security_method: &String,
-    ) -> bool {
-        match self.0.get(format) {
-            Some(ClaimFormatPayload::Alg(alg_values))
-            | Some(ClaimFormatPayload::AlgValuesSupported(alg_values)) => {
-                alg_values.contains(security_method)
-            }
-            Some(ClaimFormatPayload::ProofType(proof_types)) => {
-                proof_types.contains(security_method)
-            }
-            _ => false,
-        }
-    }
-}
-
-impl TypedParameter for VpFormatsSupported {
-    const KEY: &'static str = "vp_formats_supported";
-}
-
-impl TryFrom<Json> for VpFormatsSupported {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        serde_json::from_value(value).map(Self).map_err(Into::into)
-    }
-}
-
-impl TryFrom<VpFormatsSupported> for Json {
-    type Error = Error;
-
-    fn try_from(value: VpFormatsSupported) -> Result<Json, Self::Error> {
-        serde_json::to_value(value.0).context("Failed to serialize VpFormats")
-    }
-}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct JWKs {
@@ -105,12 +52,12 @@ impl From<EncryptedResponseEncValuesSupported> for Json {
 mod test {
     use serde_json::json;
 
+    use super::*;
+    use crate::core::metadata::parameters::VpFormatsSupported;
     use crate::core::{
         credential_format::{ClaimFormatDesignation, ClaimFormatPayload},
         object::UntypedObject,
     };
-
-    use super::*;
 
     fn metadata() -> UntypedObject {
         serde_json::from_value(json!(

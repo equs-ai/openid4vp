@@ -2,8 +2,9 @@ use super::AuthorizationRequestObject;
 use crate::core::error::Error as CoreError;
 use crate::core::error::Error::Internal;
 use crate::core::metadata::parameters::verifier::EncryptedResponseEncValuesSupported;
+use crate::core::metadata::parameters::VpFormatsSupported;
 use crate::core::{
-    metadata::parameters::verifier::{JWKs, VpFormatsSupported},
+    metadata::parameters::verifier::JWKs,
     object::{TypedParameter, UntypedObject},
 };
 use crate::utils::from_string_or_value;

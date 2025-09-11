@@ -4,10 +4,10 @@ use super::{
 };
 use crate::core::authorization_request::parameters::ResponseType;
 use crate::core::error::{Error, ErrorType};
-use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
+use crate::core::metadata::parameters::{SubjectSyntaxTypesSupported, VpFormatsSupported};
 use crate::core::metadata::WalletMetadata;
 use crate::core::{
-    metadata::parameters::wallet::{ClientIdPrefixesSupported, VpFormatsSupported},
+    metadata::parameters::wallet::ClientIdPrefixesSupported,
     object::{ParsingErrorContext, UntypedObject},
 };
 use crate::wallet::Wallet;

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use std::ops::{Deref, DerefMut};
 
-use self::parameters::wallet::{AuthorizationEndpoint, VpFormatsSupported};
+use self::parameters::wallet::AuthorizationEndpoint;
 use super::{
     authorization_request::parameters::ResponseType,
     object::{ParsingErrorContext, UntypedObject},
@@ -16,6 +16,7 @@ use crate::core::metadata::parameters::wallet::{
 use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
 use anyhow::{Error, Result};
 use parameters::wallet::{RequestObjectSigningAlgValuesSupported, ResponseTypesSupported};
+use parameters::VpFormatsSupported;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use ssi::jwk::Algorithm;

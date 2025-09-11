@@ -1,10 +1,9 @@
 use crate::core::{
     authorization_request::parameters::{ClientIdPrefix, ResponseType},
-    credential_format::{ClaimFormatDesignation, ClaimFormatMap},
     object::TypedParameter,
 };
 
-use crate::core::credential_format::ClaimFormatPayload;
+use crate::core::metadata::parameters::VpFormatsSupported;
 use anyhow::{bail, Error, Result};
 use serde_json::Value as Json;
 use url::Url;
@@ -146,44 +145,11 @@ impl From<RequestObjectSigningAlgValuesSupported> for Json {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct VpFormatsSupported(pub ClaimFormatMap);
-
-impl TypedParameter for VpFormatsSupported {
-    const KEY: &'static str = "vp_formats_supported";
-}
-
-impl TryFrom<Json> for VpFormatsSupported {
-    type Error = Error;
-
-    fn try_from(value: Json) -> Result<Self, Self::Error> {
-        serde_json::from_value(value).map(Self).map_err(Into::into)
-    }
-}
-
 impl TryFrom<VpFormatsSupported> for Json {
     type Error = Error;
 
     fn try_from(value: VpFormatsSupported) -> Result<Json, Self::Error> {
         serde_json::to_value(value.0).map_err(Into::into)
-    }
-}
-
-impl VpFormatsSupported {
-    pub fn is_claim_format_supported(&self, designation: &ClaimFormatDesignation) -> bool {
-        self.0.contains_key(designation)
-    }
-
-    pub fn contains_claim_format_with_payload(
-        &self,
-        designation: &ClaimFormatDesignation,
-        payload: &ClaimFormatPayload,
-    ) -> bool {
-        if let Some(claim_payload) = self.0.get(designation) {
-            return claim_payload.contains(payload);
-        }
-
-        false
     }
 }
 
