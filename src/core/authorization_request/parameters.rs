@@ -315,8 +315,8 @@ impl ClientMetadata {
 
     pub fn encrypted_response_enc_values_supported(
         &self,
-    ) -> Option<Result<EncryptedResponseEncValuesSupported, Error>> {
-        self.0.get()
+    ) -> Result<Option<EncryptedResponseEncValuesSupported>, Error> {
+        self.0.get().transpose()
     }
 }
 

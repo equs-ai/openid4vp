@@ -69,22 +69,18 @@ impl VpFormatsSupported {
         designation: &ClaimFormatDesignation,
         payload: &ClaimFormatPayload,
     ) -> bool {
-        if let Some(claim_payload) = self.0.get(designation) {
-            return claim_payload.contains(payload);
-        }
-
-        false
+        self.0
+            .get(designation)
+            .map(|v| v.contains(payload))
+            .unwrap_or(false)
     }
 
     /// Returns a boolean to denote whether a particular pair of format and security method
-    /// are supported in the VP formats. A security method could be a JOSE algorithm, a COSE
-    /// algorithm, a Cryptosuite, etc.
+    /// are supported in the VP formats. A security method could be a JOSE algorithm, a COSE algorithm, a Cryptosuite, etc.
     ///
-    /// NOTE: This method is interested in the security method of the claim format
-    /// payload and not the claim format designation.
+    /// NOTE: This method is interested in the security method of the claim format payload and not the claim format designation.
     ///
-    /// For example, the security method would need to match one of the `alg`
-    /// values in the claim format payload.
+    /// Example: security method would need to match one of the `alg` values in the claim format payload.
     pub fn supports_security_method(
         &self,
         format: &ClaimFormatDesignation,
