@@ -130,8 +130,7 @@ impl TypedParameter for DCQL {
 pub struct DcqlCredential {
     id: ID,
     format: ClaimFormatDesignation,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    meta: Option<Meta>,
+    meta: Meta,
     #[serde(skip_serializing_if = "Option::is_none")]
     claims: Option<Vec<DcqlClaim>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -139,11 +138,11 @@ pub struct DcqlCredential {
 }
 
 impl DcqlCredential {
-    pub fn new(id: ID, format: ClaimFormatDesignation) -> Self {
+    pub fn new(id: ID, format: ClaimFormatDesignation, meta: Meta) -> Self {
         Self {
             id,
             format,
-            meta: None,
+            meta,
             claims: None,
             claim_sets: None,
         }
@@ -166,11 +165,11 @@ impl DcqlCredential {
     }
 
     pub fn set_meta(mut self, meta: Meta) -> Self {
-        self.meta = Some(meta);
+        self.meta = meta;
         self
     }
-    pub fn meta(&self) -> Option<&Meta> {
-        self.meta.as_ref()
+    pub fn meta(&self) -> &Meta {
+        &self.meta
     }
     pub fn set_claims(mut self, claims: Vec<DcqlClaim>) -> Self {
         self.claims = Some(claims);
@@ -215,8 +214,6 @@ pub struct DcqlCredentialSet {
     options: Vec<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<bool>, // default true
-    #[serde(skip_serializing_if = "Option::is_none")]
-    purpose: Option<String>,
 }
 
 impl DcqlCredentialSet {
@@ -224,7 +221,6 @@ impl DcqlCredentialSet {
         Self {
             options,
             required: None,
-            purpose: None,
         }
     }
     pub fn add_option(mut self, option: Vec<String>) -> Self {
@@ -240,13 +236,6 @@ impl DcqlCredentialSet {
     }
     pub fn required(&self) -> Option<&bool> {
         self.required.as_ref()
-    }
-    pub fn set_purpose(mut self, purpose: &str) -> Self {
-        self.purpose = Some(purpose.to_string());
-        self
-    }
-    pub fn purpose(&self) -> Option<&String> {
-        self.purpose.as_ref()
     }
 }
 
