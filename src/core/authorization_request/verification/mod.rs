@@ -221,10 +221,7 @@ where
 
     let client_metadata = ClientMetadata::resolve(request).await?;
     validate_vp_formats_supported(&client_metadata, wallet_metadata, state.clone())?;
-
-    //TODO: Maybe it makes sense to check for algs from jwks of ClientMetadata against authorization_encryption_alg_values_supported of WalletMetadata
-    // and encrypted_response_enc_values_supported of ClientMetadata against authorization_encryption_enc_values_supported of WalletMetadata. But it was not specified
-
+    
     Ok(())
 }
 
