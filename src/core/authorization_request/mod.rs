@@ -101,7 +101,7 @@ pub enum PresentationDefinitionIndirection {
 }
 
 /// A common enum type to define either 'dcql_query' and 'presentation_definition'
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ResolvedPresentationQuery {
     #[serde(rename = "dcql_query")]
     DCQL(DCQL),
@@ -126,7 +126,7 @@ impl ResolvedPresentationQuery {
 }
 
 impl AuthorizationRequest {
-    /// Validate the [AuthorizationRequest] according to the client_id scheme and return the parsed
+    /// Validate the [AuthorizationRequest] according to the client id prefix and return the parsed
     /// [AuthorizationRequestObject].
     ///
     /// Custom wallet metadata can be provided, otherwise the default metadata for this profile is used.
@@ -276,8 +276,8 @@ impl AuthorizationRequestObject {
                 let item = TransactionDataItem::from_base64url_encoded(&item).map_err(|e| {
                     Error::protocol(
                         ErrorType::InvalidTransactionData,
-                        "The transaction data cannot be parsed: {}",
-                        Some(e.to_string()),
+                        &format!("The transaction data cannot be parsed: {}", e),
+                        self.state(),
                     )
                 })?;
                 items.push(item);

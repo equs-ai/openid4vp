@@ -16,7 +16,7 @@ use x509_cert::{
 
 use crate::core::authorization_request::parameters::{DECENTRALIZED_IDENTIFIER, REDIRECT_URI};
 use crate::core::authorization_request::{
-    parameters::{ClientId, ClientIdScheme},
+    parameters::{ClientId, ClientIdPrefix},
     AuthorizationRequestObject,
 };
 use crate::core::util::http::MIME_TYPE_OAUTH_REQ_JWT;
@@ -28,7 +28,7 @@ use crate::utils::{generate_jwt, WasmNotSync};
 pub trait Client: Debug {
     fn id(&self) -> &ClientId;
 
-    fn scheme(&self) -> ClientIdScheme;
+    fn prefix(&self) -> ClientIdPrefix;
 
     async fn generate_request_object_jwt(
         &self,
@@ -138,10 +138,10 @@ pub enum X509Variant {
 }
 
 impl X509Variant {
-    pub fn to_scheme(&self) -> ClientIdScheme {
+    pub fn to_prefix(&self) -> ClientIdPrefix {
         match self {
-            X509Variant::Hash => ClientIdScheme::X509Hash,
-            X509Variant::SanDns => ClientIdScheme::X509SanDns,
+            X509Variant::Hash => ClientIdPrefix::X509Hash,
+            X509Variant::SanDns => ClientIdPrefix::X509SanDns,
         }
     }
 }
@@ -153,8 +153,8 @@ impl<S: Signer + WasmNotSync> Client for DecentralizedIdentifierClient<S> {
         &self.id
     }
 
-    fn scheme(&self) -> ClientIdScheme {
-        ClientIdScheme::DecentralizedIdentifier
+    fn prefix(&self) -> ClientIdPrefix {
+        ClientIdPrefix::DecentralizedIdentifier
     }
 
     async fn generate_request_object_jwt(
@@ -181,10 +181,10 @@ impl Client for X509Client {
         &self.id
     }
 
-    fn scheme(&self) -> ClientIdScheme {
+    fn prefix(&self) -> ClientIdPrefix {
         match self.variant {
-            X509Variant::SanDns => ClientIdScheme::X509SanDns,
-            X509Variant::Hash => ClientIdScheme::X509Hash,
+            X509Variant::SanDns => ClientIdPrefix::X509SanDns,
+            X509Variant::Hash => ClientIdPrefix::X509Hash,
         }
     }
 
@@ -232,8 +232,8 @@ impl Client for RedirectUriClient {
         &self.id
     }
 
-    fn scheme(&self) -> ClientIdScheme {
-        ClientIdScheme::RedirectUri
+    fn prefix(&self) -> ClientIdPrefix {
+        ClientIdPrefix::RedirectUri
     }
 
     async fn generate_request_object_jwt(&self, _: &AuthorizationRequestObject) -> Result<String> {

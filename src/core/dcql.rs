@@ -9,7 +9,7 @@ use std::fmt::Debug;
 
 const ID_REGEX: &str = r"^[a-zA-Z0-9_-]+$";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ID(String);
 impl ID {
     pub fn new(id: String) -> Result<ID, Error> {
@@ -64,7 +64,7 @@ impl<'de> Deserialize<'de> for ID {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
 pub struct DCQL {
     credentials: Vec<DcqlCredential>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -126,7 +126,7 @@ impl TypedParameter for DCQL {
     const KEY: &'static str = "dcql_query";
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DcqlCredential {
     id: ID,
     format: ClaimFormatDesignation,
@@ -210,7 +210,7 @@ impl DcqlCredential {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DcqlCredentialSet {
     options: Vec<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -250,7 +250,7 @@ impl DcqlCredentialSet {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Meta {
     #[serde(skip_serializing_if = "Option::is_none")]
     vct_values: Option<Vec<String>>,
@@ -265,7 +265,7 @@ impl Meta {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DcqlClaim {
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<ID>, // REQUIRED if claim_sets is present in the Credential Query; OPTIONAL otherwise
@@ -328,14 +328,14 @@ impl DcqlClaim {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum PathValue {
     String(String),
     Usize(usize),
     Null,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum ValueType {
     String(String),
