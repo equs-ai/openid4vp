@@ -865,7 +865,7 @@ mod test {
               "id": "pid",
               "format": "dc+sd-jwt",
                 "meta": {
-                "vct_values": []
+                "vct_values": ["some_vct"]
             },
               "claims": [
                 {

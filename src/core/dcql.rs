@@ -68,7 +68,7 @@ impl<'de> Deserialize<'de> for ID {
 pub struct DCQL {
     credentials: NonEmptyVec<DcqlCredential>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    credential_sets: Option<Vec<DcqlCredentialSet>>,
+    credential_sets: Option<NonEmptyVec<DcqlCredentialSet>>,
 }
 
 impl DCQL {
@@ -83,21 +83,17 @@ impl DCQL {
         self
     }
 
-    pub fn add_credential_sets(mut self, credential_set: DcqlCredentialSet) -> Self {
-        if self.credential_sets.is_none() {
-            self.credential_sets = Some(vec![credential_set]);
-        } else {
-            let mut sets = self
-                .credential_sets
-                .take()
-                .expect("credential_sets missing");
+    pub fn add_credential_set(mut self, credential_set: DcqlCredentialSet) -> Self {
+        if let Some(mut sets) = self.credential_sets {
             sets.push(credential_set);
             self.credential_sets = Some(sets);
+        } else {
+            self.credential_sets = Some(NonEmptyVec::new(credential_set));
         }
         self
     }
 
-    pub fn credential_sets(&self) -> Option<&Vec<DcqlCredentialSet>> {
+    pub fn credential_sets(&self) -> Option<&NonEmptyVec<DcqlCredentialSet>> {
         self.credential_sets.as_ref()
     }
     pub fn credentials(&self) -> &NonEmptyVec<DcqlCredential> {
@@ -115,10 +111,10 @@ impl TryFrom<Json> for DCQL {
     }
 }
 
-impl From<DCQL> for Json {
-    fn from(value: DCQL) -> Self {
-        // the format must be correct
-        serde_json::to_value(value).unwrap()
+impl TryFrom<DCQL> for Json {
+    type Error = serde_json::Error;
+    fn try_from(value: DCQL) -> Result<Self, Self::Error> {
+        serde_json::to_value(value)
     }
 }
 
@@ -132,9 +128,13 @@ pub struct DcqlCredential {
     format: ClaimFormatDesignation,
     meta: Meta,
     #[serde(skip_serializing_if = "Option::is_none")]
-    claims: Option<Vec<DcqlClaim>>,
+    multiple: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    claim_sets: Option<Vec<Vec<String>>>,
+    claims: Option<NonEmptyVec<DcqlClaim>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    claim_sets: Option<NonEmptyVec<NonEmptyVec<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    require_cryptographic_holder_binding: Option<bool>,
 }
 
 impl DcqlCredential {
@@ -143,8 +143,10 @@ impl DcqlCredential {
             id,
             format,
             meta,
+            multiple: None,
             claims: None,
             claim_sets: None,
+            require_cryptographic_holder_binding: None,
         }
     }
 
@@ -171,63 +173,81 @@ impl DcqlCredential {
     pub fn meta(&self) -> &Meta {
         &self.meta
     }
-    pub fn set_claims(mut self, claims: Vec<DcqlClaim>) -> Self {
+
+    pub fn set_multiple(mut self, multiple: bool) -> Self {
+        self.multiple = Some(multiple);
+        self
+    }
+
+    pub fn multiple(&self) -> Option<bool> {
+        self.multiple
+    }
+
+    pub fn set_require_cryptographic_holder_binding(
+        mut self,
+        require_cryptographic_holder_binding: bool,
+    ) -> Self {
+        self.require_cryptographic_holder_binding = Some(require_cryptographic_holder_binding);
+        self
+    }
+    pub fn require_cryptographic_holder_binding(&self) -> Option<bool> {
+        self.require_cryptographic_holder_binding
+    }
+    pub fn set_claims(mut self, claims: NonEmptyVec<DcqlClaim>) -> Self {
         self.claims = Some(claims);
         self
     }
     pub fn add_claim(mut self, claim: DcqlClaim) -> Self {
-        if self.claims.is_none() {
-            self.claims = Some(vec![claim]);
-        } else {
-            let mut claims = self.claims.take().expect("claims missing");
+        if let Some(mut claims) = self.claims {
             claims.push(claim);
             self.claims = Some(claims);
+        } else {
+            self.claims = Some(NonEmptyVec::new(claim));
         }
         self
     }
 
-    pub fn claims(&self) -> Option<&Vec<DcqlClaim>> {
+    pub fn claims(&self) -> Option<&NonEmptyVec<DcqlClaim>> {
         self.claims.as_ref()
     }
 
-    pub fn set_claim_sets(mut self, sets: Vec<Vec<String>>) -> Self {
+    pub fn set_claim_sets(mut self, sets: NonEmptyVec<NonEmptyVec<String>>) -> Self {
         self.claim_sets = Some(sets);
         self
     }
-    pub fn add_claim_set(mut self, claim_set: Vec<String>) -> Self {
-        if self.claim_sets.is_none() {
-            self.claim_sets = Some(vec![claim_set]);
+    pub fn add_claim_set(mut self, claim_set: NonEmptyVec<String>) -> Self {
+        if let Some(mut sets) = self.claim_sets {
+            sets.push(claim_set);
+            self.claim_sets = Some(sets);
         } else {
-            let mut claim_sets = self.claim_sets.take().expect("claim_sets missing");
-            claim_sets.push(claim_set);
-            self.claim_sets = Some(claim_sets);
+            self.claim_sets = Some(NonEmptyVec::new(claim_set));
         }
         self
     }
-    pub fn claim_sets(&self) -> Option<&Vec<Vec<String>>> {
+    pub fn claim_sets(&self) -> Option<&NonEmptyVec<NonEmptyVec<String>>> {
         self.claim_sets.as_ref()
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DcqlCredentialSet {
-    options: Vec<Vec<String>>,
+    options: NonEmptyVec<NonEmptyVec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<bool>, // default true
 }
 
 impl DcqlCredentialSet {
-    pub fn new(options: Vec<Vec<String>>) -> Self {
+    pub fn new(options: NonEmptyVec<NonEmptyVec<String>>) -> Self {
         Self {
             options,
             required: None,
         }
     }
-    pub fn add_option(mut self, option: Vec<String>) -> Self {
+    pub fn add_option(mut self, option: NonEmptyVec<String>) -> Self {
         self.options.push(option);
         self
     }
-    pub fn options(&self) -> &Vec<Vec<String>> {
+    pub fn options(&self) -> &NonEmptyVec<NonEmptyVec<String>> {
         &self.options
     }
     pub fn set_required(mut self, required: bool) -> Self {
@@ -242,15 +262,32 @@ impl DcqlCredentialSet {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Meta {
     #[serde(skip_serializing_if = "Option::is_none")]
-    vct_values: Option<Vec<String>>,
+    vct_values: Option<NonEmptyVec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    type_values: Option<NonEmptyVec<NonEmptyVec<String>>>,
 }
 
 impl Meta {
-    pub fn new(vct_values: Option<Vec<String>>) -> Self {
-        Self { vct_values }
+    pub fn new() -> Self {
+        Self {
+            vct_values: None,
+            type_values: None,
+        }
     }
-    pub fn get_vct_values(&self) -> Option<&Vec<String>> {
+    pub fn vct_values(&self) -> Option<&NonEmptyVec<String>> {
         self.vct_values.as_ref()
+    }
+    pub fn set_vct_values(mut self, values: NonEmptyVec<String>) -> Self {
+        self.vct_values = Some(values);
+        self
+    }
+
+    pub fn type_values(&self) -> Option<&NonEmptyVec<NonEmptyVec<String>>> {
+        self.type_values.as_ref()
+    }
+    pub fn set_type_values(mut self, values: NonEmptyVec<NonEmptyVec<String>>) -> Self {
+        self.type_values = Some(values);
+        self
     }
 }
 
@@ -258,23 +295,16 @@ impl Meta {
 pub struct DcqlClaim {
     #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<ID>, // REQUIRED if claim_sets is present in the Credential Query; OPTIONAL otherwise
+    path: NonEmptyVec<PathValue>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<Vec<PathValue>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    namespace: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    claim_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    values: Option<Vec<ValueType>>,
+    values: Option<NonEmptyVec<ValueType>>,
 }
 
 impl DcqlClaim {
-    pub fn new() -> Self {
+    pub fn new(path: NonEmptyVec<PathValue>) -> Self {
         Self {
             id: None,
-            path: None,
-            namespace: None,
-            claim_name: None,
+            path,
             values: None,
         }
     }
@@ -287,32 +317,18 @@ impl DcqlClaim {
         self.id.as_ref()
     }
 
-    pub fn set_path(mut self, path: Vec<PathValue>) -> Self {
-        self.path = Some(path);
+    pub fn set_path(mut self, path: NonEmptyVec<PathValue>) -> Self {
+        self.path = path;
         self
     }
-    pub fn path(&self) -> Option<&Vec<PathValue>> {
-        self.path.as_ref()
+    pub fn path(&self) -> &NonEmptyVec<PathValue> {
+        &self.path
     }
-    pub fn set_namespace(mut self, namespace: &str) -> Self {
-        self.namespace = Some(namespace.to_string());
-        self
-    }
-    pub fn namespace(&self) -> Option<&String> {
-        self.namespace.as_ref()
-    }
-    pub fn set_claim_name(mut self, claim_name: &str) -> Self {
-        self.claim_name = Some(claim_name.to_string());
-        self
-    }
-    pub fn claim_name(&self) -> Option<&String> {
-        self.claim_name.as_ref()
-    }
-    pub fn set_values(mut self, values: Vec<ValueType>) -> Self {
+    pub fn set_values(mut self, values: NonEmptyVec<ValueType>) -> Self {
         self.values = Some(values);
         self
     }
-    pub fn values(&self) -> Option<&Vec<ValueType>> {
+    pub fn values(&self) -> Option<&NonEmptyVec<ValueType>> {
         self.values.as_ref()
     }
 }
@@ -328,14 +344,18 @@ pub enum PathValue {
 #[serde(untagged)]
 pub enum ValueType {
     String(String),
-    Integer(i64),
+    Integer(u64),
     Boolean(bool),
 }
 
 #[cfg(test)]
 mod test {
-    use crate::core::dcql::ID;
+    use crate::core::dcql::{
+        DcqlClaim, DcqlCredential, DcqlCredentialSet, Meta, PathValue, DCQL, ID,
+    };
+    use crate::utils::NonEmptyVec;
     use rstest::rstest;
+
     #[rstest]
     #[case("\"stub_id\"")]
     #[case("\"stub-id\"")]
@@ -356,5 +376,69 @@ mod test {
     fn test_id_validation(#[case] wrong_id: &str) {
         let id = ID::new(wrong_id.to_string()).unwrap();
         println!("{:#?}", id);
+    }
+
+    #[test]
+    fn test_credential_sets_adding() {
+        let dcql = get_base_dcql();
+        let dcql = dcql.add_credential_set(DcqlCredentialSet::new(NonEmptyVec::new(
+            NonEmptyVec::new("1".to_string()),
+        )));
+        assert_eq!(dcql.to_owned().credential_sets().unwrap().len(), 1);
+        let dcql = dcql.add_credential_set(DcqlCredentialSet::new(NonEmptyVec::new(
+            NonEmptyVec::new("1".to_string()),
+        )));
+        assert_eq!(dcql.credential_sets().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_credential_adding() {
+        let dcql = get_base_dcql();
+        assert_eq!(dcql.credentials().len(), 1);
+        let dcql = dcql.add_credential(DcqlCredential::new(
+            ID::new(String::from("stub_id2")).unwrap(),
+            crate::core::credential_format::ClaimFormatDesignation::SdJwtVc,
+            Meta::new().set_vct_values(NonEmptyVec::new("some_vct_type".to_string())),
+        ));
+        assert_eq!(dcql.credentials().len(), 2);
+    }
+
+    #[test]
+    fn test_claim_adding() {
+        let credential = get_base_credential();
+        let credential = credential.add_claim(DcqlClaim::new(NonEmptyVec::new(PathValue::Null)));
+        assert_eq!(credential.to_owned().claims().unwrap().len(), 1);
+        let credential = credential.add_claim(DcqlClaim::new(NonEmptyVec::new(PathValue::Null)));
+        assert_eq!(credential.claims().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_claim_set_adding() {
+        let credential = get_base_credential();
+        let credential = credential.add_claim_set(NonEmptyVec::new("1".to_string()));
+        assert_eq!(credential.to_owned().claim_sets().unwrap().len(), 1);
+        let credential = credential.add_claim_set(NonEmptyVec::new("2".to_string()));
+        assert_eq!(credential.claim_sets().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_credential_set_option_adding() {
+        let set = DcqlCredentialSet::new(NonEmptyVec::new(NonEmptyVec::new("1".to_string())));
+        assert_eq!(set.options().len(), 1);
+        let set = set.add_option(NonEmptyVec::new("1".to_string()));
+        assert_eq!(set.options().len(), 2);
+    }
+    fn get_base_dcql() -> DCQL {
+        DCQL::new(NonEmptyVec::new(get_base_credential()))
+    }
+
+    fn get_base_credential() -> DcqlCredential {
+        DcqlCredential::new(
+            ID::new(String::from("stub_id")).unwrap(),
+            crate::core::credential_format::ClaimFormatDesignation::SdJwtVc,
+            Meta::new().set_type_values(NonEmptyVec::new(NonEmptyVec::new(
+                "som_type_vale".to_string(),
+            ))),
+        )
     }
 }
