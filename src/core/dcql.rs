@@ -1,6 +1,6 @@
 use crate::core::credential_format::ClaimFormatDesignation;
 use crate::core::object::TypedParameter;
-use crate::utils::from_string_or_value;
+use crate::utils::{from_string_or_value, NonEmptyVec};
 use anyhow::{ensure, Error};
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -64,15 +64,15 @@ impl<'de> Deserialize<'de> for ID {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DCQL {
-    credentials: Vec<DcqlCredential>,
+    credentials: NonEmptyVec<DcqlCredential>,
     #[serde(skip_serializing_if = "Option::is_none")]
     credential_sets: Option<Vec<DcqlCredentialSet>>,
 }
 
 impl DCQL {
-    pub fn new(credentials: Vec<DcqlCredential>) -> Self {
+    pub fn new(credentials: NonEmptyVec<DcqlCredential>) -> Self {
         Self {
             credentials,
             credential_sets: None,
@@ -100,7 +100,7 @@ impl DCQL {
     pub fn credential_sets(&self) -> Option<&Vec<DcqlCredentialSet>> {
         self.credential_sets.as_ref()
     }
-    pub fn credentials(&self) -> &Vec<DcqlCredential> {
+    pub fn credentials(&self) -> &NonEmptyVec<DcqlCredential> {
         &self.credentials
     }
 }
