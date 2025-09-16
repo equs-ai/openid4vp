@@ -101,7 +101,7 @@ pub enum PresentationDefinitionIndirection {
     ByReference(Url),
 }
 
-/// A common enum type to define either 'dcql_query' and 'presentation_definition'
+/// A common enum type to define either 'dcql_query' or 'presentation_definition'
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ResolvedPresentationQuery {
     #[serde(rename = "dcql_query")]

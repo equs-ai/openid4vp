@@ -5,6 +5,7 @@ use url::Url;
 use super::Verifier;
 use crate::core::authorization_request::parameters::{ClientMetadata, RedirectUri, ResponseUri};
 use crate::core::authorization_request::SignedAuthorizationRequest;
+use crate::core::credential_format::ClaimFormatDesignation;
 use crate::core::dcql::DCQL;
 use crate::core::error::Error;
 use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
@@ -87,7 +88,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         ) {
             (Some(_), Some(_)) | (None, None) => {
                 return Err(Error::internal(anyhow!(
-                    "either presentation definition or dcql query must present"
+                    "either presentation definition or dcql query must be present"
                 )));
             }
             (Some(dcql), None) => {
@@ -205,6 +206,25 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
                         "Claim set cannot be given if Claims is empty"
                     )));
                 }
+                _ => {}
+            }
+
+            match cred.format() {
+                ClaimFormatDesignation::SdJwtVc => {
+                    if cred.meta().vct_values().is_none() {
+                        return Err(Error::internal(anyhow!(
+                            "vct_values must be given with SdJwtVc format"
+                        )));
+                    }
+                }
+                ClaimFormatDesignation::LdpVc => {
+                    if cred.meta().type_values().is_none() {
+                        return Err(Error::internal(anyhow!(
+                            "type_values must be given with LdpVc format"
+                        )));
+                    }
+                }
+                //TODO: Extend the validation when we support more formats: https://openid.net/specs/openid-4-verifiable-presentations-1_0-29.html#section-6.1-3.8
                 _ => {}
             }
         }
