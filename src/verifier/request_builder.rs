@@ -182,18 +182,16 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         for cred in dcql.credentials() {
             match (cred.claims(), cred.claim_sets()) {
                 (Some(claims), Some(_)) => {
+                    let mut claim_ids = HashSet::new();
                     for claim in claims {
-                        if claim.id().is_none() {
+                        if let Some(id) = claim.id() {
+                            claim_ids.insert(id.as_str());
+                        } else {
                             return Err(Error::internal(anyhow!(
                                 "Claim id cannot be empty if Claim set is given"
                             )));
                         }
                     }
-                    let claim_ids = claims
-                        .iter()
-                        .map(|v| v.id().map(|id| id.as_str()))
-                        .filter(|v| v.is_some())
-                        .collect::<HashSet<_>>();
                     if claim_ids.len() != claims.len() {
                         return Err(Error::internal(anyhow!(
                             "Claim IDs must be unique in the Credential query"

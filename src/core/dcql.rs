@@ -126,7 +126,8 @@ impl TypedParameter for DCQL {
 pub struct DcqlCredential {
     id: ID,
     format: ClaimFormatDesignation,
-    meta: Meta,
+    meta: DcqlMeta,
+    //Support will be added for multiple in the context of
     #[serde(skip_serializing_if = "Option::is_none")]
     multiple: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -138,7 +139,7 @@ pub struct DcqlCredential {
 }
 
 impl DcqlCredential {
-    pub fn new(id: ID, format: ClaimFormatDesignation, meta: Meta) -> Self {
+    pub fn new(id: ID, format: ClaimFormatDesignation, meta: DcqlMeta) -> Self {
         Self {
             id,
             format,
@@ -166,11 +167,11 @@ impl DcqlCredential {
         self
     }
 
-    pub fn set_meta(mut self, meta: Meta) -> Self {
+    pub fn set_meta(mut self, meta: DcqlMeta) -> Self {
         self.meta = meta;
         self
     }
-    pub fn meta(&self) -> &Meta {
+    pub fn meta(&self) -> &DcqlMeta {
         &self.meta
     }
 
@@ -260,14 +261,14 @@ impl DcqlCredentialSet {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct Meta {
+pub struct DcqlMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     vct_values: Option<NonEmptyVec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     type_values: Option<NonEmptyVec<NonEmptyVec<String>>>,
 }
 
-impl Meta {
+impl DcqlMeta {
     pub fn new() -> Self {
         Self {
             vct_values: None,
@@ -351,7 +352,7 @@ pub enum ValueType {
 #[cfg(test)]
 mod test {
     use crate::core::dcql::{
-        DcqlClaim, DcqlCredential, DcqlCredentialSet, Meta, PathValue, DCQL, ID,
+        DcqlClaim, DcqlCredential, DcqlCredentialSet, DcqlMeta, PathValue, DCQL, ID,
     };
     use crate::utils::NonEmptyVec;
     use rstest::rstest;
@@ -398,7 +399,7 @@ mod test {
         let dcql = dcql.add_credential(DcqlCredential::new(
             ID::new(String::from("stub_id2")).unwrap(),
             crate::core::credential_format::ClaimFormatDesignation::SdJwtVc,
-            Meta::new().set_vct_values(NonEmptyVec::new("some_vct_type".to_string())),
+            DcqlMeta::new().set_vct_values(NonEmptyVec::new("some_vct_type".to_string())),
         ));
         assert_eq!(dcql.credentials().len(), 2);
     }
@@ -436,7 +437,7 @@ mod test {
         DcqlCredential::new(
             ID::new(String::from("stub_id")).unwrap(),
             crate::core::credential_format::ClaimFormatDesignation::SdJwtVc,
-            Meta::new().set_type_values(NonEmptyVec::new(NonEmptyVec::new(
+            DcqlMeta::new().set_type_values(NonEmptyVec::new(NonEmptyVec::new(
                 "som_type_vale".to_string(),
             ))),
         )
