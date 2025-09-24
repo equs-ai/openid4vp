@@ -38,6 +38,7 @@ pub mod verification;
 #[serde(try_from = "UntypedObject", into = "UntypedObject")]
 pub struct AuthorizationRequestObject {
     inner: UntypedObject,
+    //TODO: CLient ID may be omitted in unsigned requests: https://openid.net/specs/openid-4-verifiable-presentations-1_0-29.html#appendix-A.2-6
     client_id: ClientId,
     response_mode: ResponseMode,
     response_type: ResponseType,
@@ -100,7 +101,7 @@ pub enum PresentationDefinitionIndirection {
     ByReference(Url),
 }
 
-/// A common enum type to define either 'dcql_query' and 'presentation_definition'
+/// A common enum type to define either 'dcql_query' or 'presentation_definition'
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ResolvedPresentationQuery {
     #[serde(rename = "dcql_query")]
@@ -831,12 +832,14 @@ mod tests {
                       },
                       "claims": [
                         {
-                          "namespace": "org.iso.7367.1",
-                          "claim_name": "vehicle_holder"
+                            "namespace": "org.iso.7367.1",
+                            "claim_name": "vehicle_holder",
+                            "path": ["last_name"]
                         },
                         {
-                          "namespace": "org.iso.18013.5.1",
-                          "claim_name": "first_name"
+                            "namespace": "org.iso.18013.5.1",
+                            "claim_name": "first_name",
+                            "path": ["last_name"]
                         }
                       ]
                     },
@@ -848,12 +851,14 @@ mod tests {
                       },
                       "claims": [
                         {
-                          "namespace": "org.iso.7367.1",
-                          "claim_name": "vehicle_holder"
+                            "namespace": "org.iso.7367.1",
+                            "claim_name": "vehicle_holder",
+                            "path": ["last_name"]
                         },
                         {
-                          "namespace": "org.iso.18013.5.1",
-                          "claim_name": "first_name"
+                            "namespace": "org.iso.18013.5.1",
+                            "claim_name": "first_name",
+                            "path": ["last_name"]
                         }
                       ]
                     }

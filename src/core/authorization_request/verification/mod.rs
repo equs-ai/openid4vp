@@ -221,7 +221,7 @@ where
 
     let client_metadata = ClientMetadata::resolve(request).await?;
     validate_vp_formats_supported(&client_metadata, wallet_metadata, state.clone())?;
-    
+
     Ok(())
 }
 

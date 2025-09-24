@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use std::collections::HashSet;
 use url::Url;
 
 use super::Verifier;
@@ -86,10 +87,11 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         ) {
             (Some(_), Some(_)) | (None, None) => {
                 return Err(Error::internal(anyhow!(
-                    "either presentation definition or dcql query must present"
+                    "either presentation definition or dcql query must be present"
                 )));
             }
             (Some(dcql), None) => {
+                Self::validate_dcql(&dcql)?;
                 self.request_parameters.insert(dcql);
             }
             (None, Some(presentation_definition)) => {
@@ -164,6 +166,47 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
                 Ok((authorization_request_url, Some(auth_req_jwt)))
             }
         }
+    }
+
+    fn validate_dcql(dcql: &DCQL) -> Result<(), Error> {
+        let cred_ids = dcql
+            .credentials()
+            .iter()
+            .map(|v| v.id().as_str())
+            .collect::<HashSet<_>>();
+        if cred_ids.len() != dcql.credentials().len() {
+            return Err(Error::internal(anyhow!(
+                "Credential IDs must be unique in the dcql query"
+            )));
+        }
+        for cred in dcql.credentials() {
+            match (cred.claims(), cred.claim_sets()) {
+                (Some(claims), Some(_)) => {
+                    let mut claim_ids = HashSet::new();
+                    for claim in claims {
+                        if let Some(id) = claim.id() {
+                            claim_ids.insert(id.as_str());
+                        } else {
+                            return Err(Error::internal(anyhow!(
+                                "Claim id cannot be empty if Claim set is given"
+                            )));
+                        }
+                    }
+                    if claim_ids.len() != claims.len() {
+                        return Err(Error::internal(anyhow!(
+                            "Claim IDs must be unique in the Credential query"
+                        )));
+                    }
+                }
+                (None, Some(_)) => {
+                    return Err(Error::internal(anyhow!(
+                        "Claim set cannot be given if Claims is empty"
+                    )));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     fn validate_presentation_definition(
