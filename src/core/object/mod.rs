@@ -7,13 +7,13 @@ use serde_json::{Map, Value as Json};
 /// An untyped (JSON) Object from which [TypedParameters](TypedParameter) can be parsed.
 ///
 /// Can represent metadata or request objects.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct UntypedObject(pub(crate) Map<String, Json>);
 
 // TODO: Replace anyhow error type.
 /// A strongly typed parameter that can represent metadata entries or request parameters.
 pub trait TypedParameter:
-    TryFrom<Json, Error = anyhow::Error> + TryInto<Json> + Clone + std::fmt::Debug
+    TryFrom<Json, Error = Error> + TryInto<Json> + Clone + std::fmt::Debug
 {
     const KEY: &'static str;
 }

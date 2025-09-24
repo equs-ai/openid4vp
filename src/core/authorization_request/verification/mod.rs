@@ -1,20 +1,14 @@
 use super::{
-    parameters::{ClientIdScheme, ClientMetadata, ResponseMode},
+    parameters::{ClientIdPrefix, ClientMetadata},
     AuthorizationRequestObject, FetchedAuthorizationRequest,
 };
 use crate::core::authorization_request::parameters::ResponseType;
 use crate::core::error::{Error, ErrorType};
-use crate::core::metadata::parameters::SubjectSyntaxTypesSupported;
+use crate::core::metadata::parameters::{SubjectSyntaxTypesSupported, VpFormatsSupported};
 use crate::core::metadata::WalletMetadata;
 use crate::core::{
-    metadata::parameters::{
-        verifier::{AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc},
-        wallet::{
-            AuthorizationEncryptionAlgValuesSupported, AuthorizationEncryptionEncValuesSupported,
-            ClientIdSchemesSupported, VpFormatsSupported,
-        },
-    },
-    object::{ParsingErrorContext, TypedParameter, UntypedObject},
+    metadata::parameters::wallet::ClientIdPrefixesSupported,
+    object::{ParsingErrorContext, UntypedObject},
 };
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
@@ -30,35 +24,35 @@ pub mod x509_san;
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait RequestVerifier {
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `did`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `decentralized_identifier`.
     ///
-    /// See default implementation [did].
-    async fn did(
+    /// See default implementation [decentralized_identifier].
+    async fn decentralized_identifier(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
-            "'did' client verification is not supported",
+            "'decentralized_identifier' client verification is not supported",
             state.clone(),
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `entity_id` or `https`.
-    async fn entity_id(
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `openid_federation`.
+    async fn openid_federation(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
-            "'entity_id' client verification is not supported",
+            "'openid_federation' client verification is not supported",
             state.clone(),
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `pre-registered`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `pre-registered`.
     async fn preregistered(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -71,7 +65,7 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `redirect_uri`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `redirect_uri`.
     ///
     /// See default implementation [redirect_uri].
     async fn redirect_uri(
@@ -86,7 +80,7 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `verifier_attestation`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `verifier_attestation`.
     async fn verifier_attestation(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -99,22 +93,22 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `web-origin`.
-    async fn web_origin(
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `origin`.
+    async fn origin(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
-            "'web_origin' client verification is not supported",
+            "'origin' client verification is not supported",
             state.clone(),
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_dns`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `x509_san_dns`.
     ///
-    /// See default implementation [x509_san_uri].
+    /// See default implementation [x509_san_dns].
     async fn x509_san_dns(
         &self,
         decoded_request: &AuthorizationRequestObject,
@@ -127,17 +121,17 @@ pub trait RequestVerifier {
         ))
     }
 
-    /// Performs verification on Authorization Request Objects when `client_id_scheme` is `x509_san_uri`.
+    /// Performs verification on Authorization Request Objects when `client_id_prefix` is `x509_hash`.
     ///
-    /// See default implementation [x509_san_uri].
-    async fn x509_san_uri(
+    /// See default implementation [x509_hash].
+    async fn x509_hash(
         &self,
         decoded_request: &AuthorizationRequestObject,
         request_jwt: String,
     ) -> Result<(), Error> {
         let state = decoded_request.state();
         Err(Error::protocol_access_denied(
-            "'x509_san_uri' client verification is not supported",
+            "'x509_hash' client verification is not supported",
             state.clone(),
         ))
     }
@@ -167,22 +161,23 @@ where
                     })?
                     .try_into()?;
 
-            match request.client_id().get_scheme() {
-                ClientIdScheme::Did => wallet.did(&request, jwt).await?,
-                ClientIdScheme::EntityId => wallet.entity_id(&request, jwt).await?,
-                ClientIdScheme::Https => wallet.entity_id(&request, jwt).await?,
-                ClientIdScheme::PreRegistered => wallet.preregistered(&request, jwt).await?,
-                ClientIdScheme::VerifierAttestation => {
+            match request.client_id().get_prefix() {
+                ClientIdPrefix::DecentralizedIdentifier => {
+                    wallet.decentralized_identifier(&request, jwt).await?
+                }
+                ClientIdPrefix::OpenidFederation => wallet.openid_federation(&request, jwt).await?,
+                ClientIdPrefix::PreRegistered => wallet.preregistered(&request, jwt).await?,
+                ClientIdPrefix::VerifierAttestation => {
                     wallet.verifier_attestation(&request, jwt).await?
                 }
-                ClientIdScheme::WebOrigin => wallet.web_origin(&request, jwt).await?,
-                ClientIdScheme::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
-                ClientIdScheme::X509SanUri => wallet.x509_san_uri(&request, jwt).await?,
-                //  request cannot be signed for ClientIdScheme::RedirectUri. link: https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-defined-client-identifier-s
-                ClientIdScheme::RedirectUri => {
+                ClientIdPrefix::Origin => wallet.origin(&request, jwt).await?,
+                ClientIdPrefix::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
+                ClientIdPrefix::X509Hash => wallet.x509_hash(&request, jwt).await?,
+                //  request cannot be signed for ClientIdPrefix::RedirectUri. link: https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-defined-client-identifier-s
+                ClientIdPrefix::RedirectUri => {
                     return Err(Error::protocol(
-                        ErrorType::WrongClientIdScheme,
-                        "Redirect uri scheme is not supported with signed request type",
+                        ErrorType::WrongClientIdPrefix,
+                        "Redirect uri prefix is not supported with signed request type",
                         None,
                     ));
                 }
@@ -207,16 +202,16 @@ where
     let state = request.state();
     let wallet_metadata = wallet.metadata();
 
-    let client_id_scheme = request.client_id().get_scheme();
+    let client_id_prefix = request.client_id().get_prefix();
     if !wallet_metadata
-        .get_or_default::<ClientIdSchemesSupported>()?
+        .get_or_default::<ClientIdPrefixesSupported>()?
         .0
-        .contains(&client_id_scheme)
+        .contains(&client_id_prefix)
     {
         return Err(Error::protocol_invalid_req(
             &format!(
-                "wallet does not support client_id_scheme '{}'",
-                client_id_scheme.to_string()
+                "wallet does not support client_id_prefix '{}'",
+                client_id_prefix.to_string()
             ),
             state.clone(),
         ));
@@ -225,49 +220,7 @@ where
     validate_response_type(request, wallet_metadata)?;
 
     let client_metadata = ClientMetadata::resolve(request).await?;
-    validate_vp_formats(&client_metadata, wallet_metadata, state.clone())?;
-
-    let response_mode = request.get::<ResponseMode>().parsing_error()?;
-
-    if response_mode.is_jarm()? {
-        let alg = client_metadata
-            .0
-            .get::<AuthorizationEncryptedResponseAlg>()
-            .parsing_error()?;
-        let enc = client_metadata
-            .0
-            .get::<AuthorizationEncryptedResponseEnc>()
-            .parsing_error()?;
-
-        if let Some(supported_algs) =
-            wallet_metadata.get::<AuthorizationEncryptionAlgValuesSupported>()
-        {
-            if !supported_algs?.0.contains(&alg.0) {
-                return Err(Error::protocol_invalid_req(
-                    &format!(
-                        "unsupported {} '{}'",
-                        AuthorizationEncryptedResponseAlg::KEY,
-                        alg.0
-                    ),
-                    state.clone(),
-                ));
-            }
-        }
-        if let Some(supported_encs) =
-            wallet_metadata.get::<AuthorizationEncryptionEncValuesSupported>()
-        {
-            if !supported_encs?.0.contains(&enc.0) {
-                return Err(Error::protocol_invalid_req(
-                    &format!(
-                        "unsupported {} '{}'",
-                        AuthorizationEncryptedResponseEnc::KEY,
-                        enc.0
-                    ),
-                    state.clone(),
-                ));
-            }
-        }
-    }
+    validate_vp_formats_supported(&client_metadata, wallet_metadata, state.clone())?;
 
     Ok(())
 }
@@ -322,7 +275,7 @@ fn validate_response_type(
     Ok(())
 }
 
-fn validate_vp_formats(
+fn validate_vp_formats_supported(
     metadata: &ClientMetadata,
     wallet_metadata: &WalletMetadata,
     state: Option<String>,

@@ -1,40 +1,37 @@
 use super::AuthorizationRequestObject;
 use crate::core::error::Error as CoreError;
 use crate::core::error::Error::Internal;
+use crate::core::metadata::parameters::verifier::EncryptedResponseEncValuesSupported;
+use crate::core::metadata::parameters::VpFormatsSupported;
 use crate::core::{
-    metadata::parameters::verifier::{
-        AuthorizationEncryptedResponseAlg, AuthorizationEncryptedResponseEnc,
-        AuthorizationSignedResponseAlg, JWKs, VpFormats,
-    },
+    metadata::parameters::verifier::JWKs,
     object::{TypedParameter, UntypedObject},
 };
 use crate::utils::from_string_or_value;
-use anyhow::{anyhow, bail, Error};
+use anyhow::{anyhow, Error};
 use base64::engine::general_purpose;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use base64::Engine;
 use p256::elliptic_curve::rand_core::RngCore;
-use serde::{Deserialize, Serialize};
-use serde_json::Value as Json;
+use serde::{Deserialize, Serialize, Serializer};
+use serde_json::{Value as Json, Value};
 use std::fmt::Display;
 use std::{fmt, ops::Deref};
 use url::Url;
 
-pub const DID: &str = "did";
-/// Deprecated, use `https` instead.
-pub const ENTITY_ID: &str = "entity_id";
-pub const HTTPS: &str = "https";
+pub const DECENTRALIZED_IDENTIFIER: &str = "decentralized_identifier";
+pub const OPENID_FEDERATION: &str = "openid_federation";
 pub const PREREGISTERED: &str = "pre-registered";
 pub const REDIRECT_URI: &str = "redirect_uri";
 pub const VERIFIER_ATTESTATION: &str = "verifier_attestation";
-pub const WEB_ORIGIN: &str = "web-origin";
+pub const ORIGIN: &str = "origin";
 pub const X509_SAN_DNS: &str = "x509_san_dns";
-pub const X509_SAN_URI: &str = "x509_san_uri";
+pub const X509_HASH: &str = "x509_hash";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClientId {
     id: String,
-    scheme: ClientIdScheme,
+    prefix: ClientIdPrefix,
 }
 
 impl ClientId {
@@ -49,25 +46,16 @@ impl ClientId {
         if parts.len() == 1 {
             return Ok(Self {
                 id: parts[0].to_string(),
-                scheme: ClientIdScheme::PreRegistered,
+                prefix: ClientIdPrefix::PreRegistered,
             });
         }
 
-        let scheme = ClientIdScheme::try_from(parts[0].to_string())?;
-        let id = match scheme {
-            ClientIdScheme::Did | ClientIdScheme::Https => client_id.clone(),
-            ClientIdScheme::PreRegistered
-            | ClientIdScheme::RedirectUri
-            | ClientIdScheme::X509SanDns
-            | ClientIdScheme::EntityId
-            | ClientIdScheme::WebOrigin
-            | ClientIdScheme::VerifierAttestation
-            | ClientIdScheme::X509SanUri => parts[1].to_string(),
-        };
-        Ok(Self { id, scheme })
+        let prefix = ClientIdPrefix::try_from(parts[0].to_string())?;
+        let id = parts[1].to_string();
+        Ok(Self { id, prefix })
     }
-    pub fn get_scheme(&self) -> &ClientIdScheme {
-        &self.scheme
+    pub fn get_prefix(&self) -> &ClientIdPrefix {
+        &self.prefix
     }
 
     pub fn get_id(&self) -> String {
@@ -75,19 +63,7 @@ impl ClientId {
     }
 
     pub fn get_full_id(&self) -> String {
-        let id = match self.scheme {
-            ClientIdScheme::Did | ClientIdScheme::EntityId => self.get_id().to_owned(),
-            ClientIdScheme::Https
-            | ClientIdScheme::PreRegistered
-            | ClientIdScheme::RedirectUri
-            | ClientIdScheme::VerifierAttestation
-            | ClientIdScheme::WebOrigin
-            | ClientIdScheme::X509SanDns
-            | ClientIdScheme::X509SanUri => {
-                format!("{}:{}", self.get_scheme().to_string(), self.get_id())
-            }
-        };
-        id
+        format!("{}:{}", self.get_prefix().to_string(), self.get_id())
     }
 }
 
@@ -99,7 +75,11 @@ impl TryFrom<Json> for ClientId {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        Self::new(serde_json::from_value(value)?)
+        if let Value::String(val) = value {
+            Self::new(val)
+        } else {
+            Err(anyhow!("client_id is not a string"))
+        }
     }
 }
 
@@ -109,62 +89,89 @@ impl From<ClientId> for Json {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ClientIdScheme {
-    Did,
-    EntityId,
-    Https,
+impl<'de> Deserialize<'de> for ClientId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        let mut parts = s.splitn(2, ':');
+
+        let prefix = parts
+            .next()
+            .ok_or_else(|| serde::de::Error::custom("missing client id prefix"))?
+            .to_string();
+        let id = parts
+            .next()
+            .ok_or_else(|| serde::de::Error::custom("missing id from the client_id"))?
+            .to_string();
+
+        Ok(Self::new(format!("{}:{}", prefix, id)).map_err(serde::de::Error::custom)?)
+    }
+}
+
+impl Serialize for ClientId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.get_full_id())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ClientIdPrefix {
+    DecentralizedIdentifier,
+    OpenidFederation,
     PreRegistered,
     RedirectUri,
     VerifierAttestation,
-    WebOrigin,
+    Origin,
     X509SanDns,
-    X509SanUri,
+    X509Hash,
 }
 
-impl TryFrom<String> for ClientIdScheme {
+impl TryFrom<String> for ClientIdPrefix {
     type Error = Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.as_str() {
-            DID => Ok(ClientIdScheme::Did),
-            ENTITY_ID => Ok(ClientIdScheme::EntityId),
-            HTTPS => Ok(ClientIdScheme::Https),
-            PREREGISTERED => Ok(ClientIdScheme::PreRegistered),
-            REDIRECT_URI => Ok(ClientIdScheme::RedirectUri),
-            VERIFIER_ATTESTATION => Ok(ClientIdScheme::VerifierAttestation),
-            WEB_ORIGIN => Ok(ClientIdScheme::WebOrigin),
-            X509_SAN_DNS => Ok(ClientIdScheme::X509SanDns),
-            X509_SAN_URI => Ok(ClientIdScheme::X509SanUri),
+            DECENTRALIZED_IDENTIFIER => Ok(ClientIdPrefix::DecentralizedIdentifier),
+            OPENID_FEDERATION => Ok(ClientIdPrefix::OpenidFederation),
+            PREREGISTERED => Ok(ClientIdPrefix::PreRegistered),
+            REDIRECT_URI => Ok(ClientIdPrefix::RedirectUri),
+            VERIFIER_ATTESTATION => Ok(ClientIdPrefix::VerifierAttestation),
+            ORIGIN => Ok(ClientIdPrefix::Origin),
+            X509_SAN_DNS => Ok(ClientIdPrefix::X509SanDns),
+            X509_HASH => Ok(ClientIdPrefix::X509Hash),
             _ => Err(anyhow!(
-                "Given client id scheme is not supported: {}",
+                "Given client id prefix is not supported: {}",
                 value
             )),
         }
     }
 }
-impl From<ClientIdScheme> for String {
-    fn from(value: ClientIdScheme) -> Self {
+impl From<ClientIdPrefix> for String {
+    fn from(value: ClientIdPrefix) -> Self {
         match value {
-            ClientIdScheme::Did => DID.to_string(),
-            ClientIdScheme::EntityId => ENTITY_ID.to_string(),
-            ClientIdScheme::Https => HTTPS.to_string(),
-            ClientIdScheme::PreRegistered => PREREGISTERED.to_string(),
-            ClientIdScheme::RedirectUri => REDIRECT_URI.to_string(),
-            ClientIdScheme::VerifierAttestation => VERIFIER_ATTESTATION.to_string(),
-            ClientIdScheme::WebOrigin => WEB_ORIGIN.to_string(),
-            ClientIdScheme::X509SanDns => X509_SAN_DNS.to_string(),
-            ClientIdScheme::X509SanUri => X509_SAN_URI.to_string(),
+            ClientIdPrefix::DecentralizedIdentifier => DECENTRALIZED_IDENTIFIER.to_string(),
+            ClientIdPrefix::OpenidFederation => OPENID_FEDERATION.to_string(),
+            ClientIdPrefix::PreRegistered => PREREGISTERED.to_string(),
+            ClientIdPrefix::RedirectUri => REDIRECT_URI.to_string(),
+            ClientIdPrefix::VerifierAttestation => VERIFIER_ATTESTATION.to_string(),
+            ClientIdPrefix::Origin => ORIGIN.to_string(),
+            ClientIdPrefix::X509SanDns => X509_SAN_DNS.to_string(),
+            ClientIdPrefix::X509Hash => X509_HASH.to_string(),
         }
     }
 }
 
-impl Display for ClientIdScheme {
+impl Display for ClientIdPrefix {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", String::from(self.to_owned()))
     }
 }
 
-impl TryFrom<Json> for ClientIdScheme {
+impl TryFrom<Json> for ClientIdPrefix {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
@@ -174,8 +181,8 @@ impl TryFrom<Json> for ClientIdScheme {
     }
 }
 
-impl From<ClientIdScheme> for Json {
-    fn from(value: ClientIdScheme) -> Self {
+impl From<ClientIdPrefix> for Json {
+    fn from(value: ClientIdPrefix) -> Self {
         Json::String(String::from(value))
     }
 }
@@ -226,10 +233,8 @@ impl TransactionDataItem {
 /// It MUST be UTF-8 encoded. The following metadata parameters MAY be used:
 ///
 /// jwks: OPTIONAL. A JWKS as defined in [RFC7591]. It MAY contain one or more public keys, such as those used by the Wallet as an input to a key agreement that may be used for encryption of the Authorization Response (see Section 7.3), or where the Wallet will require the public key of the Verifier to generate the Verifiable Presentation. This allows the Verifier to pass ephemeral keys specific to this Authorization Request. Public keys included in this parameter MUST NOT be used to verify the signature of signed Authorization Requests.
-/// vp_formats: REQUIRED when not available to the Wallet via another mechanism. As defined in Section 10.1.
-/// authorization_signed_response_alg: OPTIONAL. As defined in [JARM].
-/// authorization_encrypted_response_alg: OPTIONAL. As defined in [JARM].
-/// authorization_encrypted_response_enc: OPTIONAL. As defined in [JARM].
+/// vp_formats_supported: REQUIRED when not available to the Wallet via another mechanism. As defined in Section 10.1.
+/// encrypted_response_enc_values_supported: OPTIONAL. Non-empty array of strings, where each string is a JWE
 /// Authoritative data the Wallet is able to obtain about the Client from other sources,
 /// for example those from an OpenID Federation Entity Statement, take precedence over the
 /// values passed in client_metadata. Other metadata parameters MUST be ignored unless a
@@ -238,7 +243,7 @@ impl TransactionDataItem {
 ///
 /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.4
 ///
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClientMetadata(pub UntypedObject);
 
 impl TypedParameter for ClientMetadata {
@@ -297,91 +302,21 @@ impl ClientMetadata {
 
     /// Return the `VpFormats` from the `client_metadata` field.
     ///
-    /// vp_formats: REQUIRED when not available to the Wallet via another mechanism.
+    /// vp_formats_supported: REQUIRED when not available to the Wallet via another mechanism.
     ///
     /// As defined in [Section 10.1](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#client_metadata_parameters).
     ///
     /// See reference: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.2
-    pub fn vp_formats(&self) -> Result<VpFormats, Error> {
-        self.0.get().ok_or(anyhow!("missing vp_formats"))?
+    pub fn vp_formats_supported(&self) -> Result<VpFormatsSupported, Error> {
+        self.0
+            .get()
+            .ok_or(anyhow!("missing vp_formats_supported"))?
     }
 
-    /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
-    ///
-    /// JARM -> JWT Secured Authorization Response Mode for OAuth 2.0
-    ///
-    /// The JWS [RFC7515](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7515)
-    /// `alg` algorithm REQUIRED for signing authorization responses.
-    ///
-    /// If this is specified, the response will be signed using JWS and the configured algorithm.
-    ///
-    /// If unspecified, the default algorithm to use for signing authorization responses is RS256.
-    ///
-    /// The algorithm none is not allowed.
-    ///
-    ///  A list of defined ["alg" values](https://datatracker.ietf.org/doc/html/rfc7518#section-3.1)
-    /// for this use can be found in the IANA "JSON Web Signature and Encryption Algorithms" registry established
-    /// by [JWA](https://www.rfc-editor.org/rfc/rfc7515.html#ref-JWA); the initial contents of this registry are the values
-    /// defined in Section 3.1 of [JWA](https://www.rfc-editor.org/rfc/rfc7515.html#ref-JWA).
-    ///
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.3
-    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.2.1
-    /// See: https://datatracker.ietf.org/doc/html/rfc7518#section-3.1
-    ///
-    pub fn authorization_signed_response_alg(
+    pub fn encrypted_response_enc_values_supported(
         &self,
-    ) -> Result<AuthorizationSignedResponseAlg, Error> {
-        self.0.get().unwrap_or(Ok(AuthorizationSignedResponseAlg(
-            ssi::crypto::Algorithm::RS256,
-        )))
-    }
-
-    /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
-    ///
-    /// JARM -> JWT Secured Authorization Response Mode for OAuth 2.0
-    ///
-    /// The JWE [RFC7516](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7516)
-    /// `alg` algorithm REQUIRED for encrypting authorization responses.
-    ///
-    /// If both signing and encryption are requested, the response will be signed then encrypted,
-    /// with the result being a Nested JWT, as defined in JWT
-    /// [RFC7519](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7519).
-    ///
-    /// The default, if omitted, is that no encryption is performed.
-    ///
-    ///
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.4
-    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.4.1
-    ///
-    pub fn authorization_encrypted_response_alg(
-        &self,
-    ) -> Option<Result<AuthorizationEncryptedResponseAlg, Error>> {
-        self.0.get()
-    }
-
-    /// OPTIONAL. As defined in [JARM](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#JARM).
-    ///
-    /// JARM -> JWT Secured Authorization Response Mode for OAuth 2.0
-    ///
-    /// The JWE [RFC7516](https://openid.net/specs/oauth-v2-jarm-final.html#RFC7516) `enc` algorithm
-    /// REQUIRED for encrypting authorization responses.
-    ///
-    /// If `authorization_encrypted_response_alg` is specified, the default for this value is `A128CBC-HS256`.
-    ///
-    /// When `authorization_encrypted_response_enc` is included, authorization_encrypted_response_alg MUST also be provided.
-    ///
-    /// See: https://openid.net/specs/openid-4-verifiable-presentations-1_0.html#section-5.1-4.2.2.5
-    /// See: https://openid.net/specs/oauth-v2-jarm-final.html#section-3-3.6.1
-    ///
-    pub fn authorization_encrypted_response_enc(
-        &self,
-    ) -> Option<Result<AuthorizationEncryptedResponseEnc, Error>> {
-        match self.0.get() {
-            Some(enc) => Some(enc),
-            None => self
-                .authorization_encrypted_response_alg()
-                .map(|_| Ok(AuthorizationEncryptedResponseEnc("A128CBC-HS256".into()))),
-        }
+    ) -> Result<Option<EncryptedResponseEncValuesSupported>, Error> {
+        self.0.get().transpose()
     }
 }
 
@@ -414,7 +349,7 @@ impl Deref for Nonce {
     }
 }
 
-impl std::fmt::Display for Nonce {
+impl Display for Nonce {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
@@ -614,7 +549,7 @@ impl From<ResponseMode> for Json {
     }
 }
 
-impl fmt::Display for ResponseMode {
+impl Display for ResponseMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ResponseMode::DirectPost => DIRECT_POST,
@@ -624,18 +559,6 @@ impl fmt::Display for ResponseMode {
             ResponseMode::Unsupported(u) => u,
         }
         .fmt(f)
-    }
-}
-
-impl ResponseMode {
-    pub fn is_jarm(&self) -> Result<bool, Error> {
-        match self {
-            ResponseMode::DirectPost => Ok(false),
-            ResponseMode::DirectPostJwt => Ok(true),
-            ResponseMode::DCAPI => Ok(false),
-            ResponseMode::DCAPIJwt => Ok(true),
-            ResponseMode::Unsupported(rm) => bail!("unsupported response_mode: {rm}"),
-        }
     }
 }
 
@@ -863,7 +786,7 @@ impl TryFrom<String> for HashAlgorithm {
 #[cfg(test)]
 mod test {
     use crate::core::authorization_request::parameters::{
-        ClientId, ClientIdScheme, HashAlgorithm, TransactionDataItem,
+        ClientId, ClientIdPrefix, HashAlgorithm, TransactionDataItem,
     };
     use crate::core::authorization_request::ResolvedPresentationQuery;
     use crate::core::dcql::DcqlCredential;
@@ -876,15 +799,19 @@ mod test {
         "redirect_uri",
         "https://client.example.org/cb"
     )]
-    #[case("did:web:someid", "did", "did:web:someid")]
+    #[case(
+        "decentralized_identifier:did:web:someid",
+        "decentralized_identifier",
+        "did:web:someid"
+    )]
     #[case(
         "x509_san_dns:client.example.org",
         "x509_san_dns",
         "client.example.org"
     )]
     #[case(
-        "https://client.example.org/cb",
-        "https",
+        "openid_federation:https://client.example.org/cb",
+        "openid_federation",
         "https://client.example.org/cb"
     )]
     #[case(
@@ -892,32 +819,32 @@ mod test {
         "verifier_attestation",
         "example-client"
     )]
-    fn test_client_id_scheme_parsing_successfully(
+    fn test_client_id_prefix_parsing_successfully(
         #[case] client_id: String,
-        #[case] scheme: String,
+        #[case] prefix: String,
         #[case] id: &str,
     ) {
         let client_id = ClientId::new(client_id).unwrap();
 
         assert_eq!(
-            ClientIdScheme::try_from(scheme).unwrap(),
-            client_id.get_scheme().to_owned()
+            ClientIdPrefix::try_from(prefix).unwrap(),
+            client_id.get_prefix().to_owned()
         );
         assert_eq!(id, client_id.get_id());
     }
 
     #[rstest]
     #[case("https//verifier.com")]
-    fn client_id_scheme_parsing_successfully_for_preregistered(#[case] id: String) {
+    fn client_id_prefix_parsing_successfully_for_preregistered(#[case] id: String) {
         let client_id = ClientId::new(id.clone()).unwrap();
         assert_eq!(
-            ClientIdScheme::PreRegistered,
-            client_id.get_scheme().to_owned()
+            ClientIdPrefix::PreRegistered,
+            client_id.get_prefix().to_owned()
         );
     }
 
     #[rstest]
-    #[should_panic(expected = "Given client id scheme is not supported")]
+    #[should_panic(expected = "Given client id prefix is not supported")]
     #[case("some:id/something")]
     #[should_panic(expected = "Client ID cannot be empty.")]
     #[case("")]
@@ -927,8 +854,8 @@ mod test {
 
     #[rstest]
     #[case("some:id/something")]
-    #[should_panic(expected = "Given client id scheme is not supported")]
-    fn client_id_parsing_unsuccessfully_unsupported_scheme(#[case] id: String) {
+    #[should_panic(expected = "Given client id prefix is not supported")]
+    fn client_id_parsing_unsuccessfully_unsupported_prefix(#[case] id: String) {
         ClientId::new(id).unwrap();
     }
     #[test]
@@ -937,6 +864,9 @@ mod test {
             {
               "id": "pid",
               "format": "dc+sd-jwt",
+                "meta": {
+                    "vct_values": ["some_vct"]
+                },
               "claims": [
                 {
                   "path": [

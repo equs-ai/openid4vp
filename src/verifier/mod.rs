@@ -72,7 +72,7 @@ impl<C: Client + WasmNotSend + WasmNotSync> VerifierBuilder<C> {
     /// [AuthorizationRequest](crate::core::authorization_request::AuthorizationRequest) will
     /// contain.
     ///
-    /// 'client_id' and 'client_id_scheme' are always overridden by the
+    /// 'client_id' and 'client_id_prefix' are always overridden by the
     /// [Client](crate::verifier::client::Client).
     pub fn with_default_request_parameter<T: TypedParameter>(mut self, t: T) -> Self {
         self.default_request_params.insert(t);

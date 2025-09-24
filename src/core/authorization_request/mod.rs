@@ -38,6 +38,7 @@ pub mod verification;
 #[serde(try_from = "UntypedObject", into = "UntypedObject")]
 pub struct AuthorizationRequestObject {
     inner: UntypedObject,
+    //TODO: CLient ID may be omitted in unsigned requests: https://openid.net/specs/openid-4-verifiable-presentations-1_0-29.html#appendix-A.2-6
     client_id: ClientId,
     response_mode: ResponseMode,
     response_type: ResponseType,
@@ -100,8 +101,8 @@ pub enum PresentationDefinitionIndirection {
     ByReference(Url),
 }
 
-/// A common enum type to define either 'dcql_query' and 'presentation_definition'
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// A common enum type to define either 'dcql_query' or 'presentation_definition'
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ResolvedPresentationQuery {
     #[serde(rename = "dcql_query")]
     DCQL(DCQL),
@@ -126,7 +127,7 @@ impl ResolvedPresentationQuery {
 }
 
 impl AuthorizationRequest {
-    /// Validate the [AuthorizationRequest] according to the client_id scheme and return the parsed
+    /// Validate the [AuthorizationRequest] according to the client id prefix and return the parsed
     /// [AuthorizationRequestObject].
     ///
     /// Custom wallet metadata can be provided, otherwise the default metadata for this profile is used.
@@ -276,8 +277,8 @@ impl AuthorizationRequestObject {
                 let item = TransactionDataItem::from_base64url_encoded(&item).map_err(|e| {
                     Error::protocol(
                         ErrorType::InvalidTransactionData,
-                        "The transaction data cannot be parsed: {}",
-                        Some(e.to_string()),
+                        &format!("The transaction data cannot be parsed: {}", e),
+                        self.state(),
                     )
                 })?;
                 items.push(item);
@@ -703,8 +704,7 @@ mod tests {
     fn get_json_for_presentation_definition() -> AuthorizationRequestObject {
         serde_json::from_value(json!({
           "response_type": "vp_token",
-          "client_id": "https://verifier.example.org",
-          "client_id_scheme": "redirect_uri",
+          "client_id": "redirect_uri:https://verifier.example.org",
           "redirect_uri": "https://verifier.example.org/callback",
           "scope": "openid",
           "nonce": "n-0S6_WzA2Mj",
@@ -756,8 +756,7 @@ mod tests {
         serde_json::from_value(
             json!({
               "response_type": "vp_token",
-              "client_id": "https://verifier.example.org",
-              "client_id_scheme": "redirect_uri",
+              "client_id": "redirect_uri:https://verifier.example.org",
               "redirect_uri": "https://verifier.example.org/callback",
               "scope": "openid",
               "nonce": "n-0S6_WzA2Mj",
@@ -780,8 +779,7 @@ mod tests {
     fn get_json_for_dcql() -> AuthorizationRequestObject {
         serde_json::from_value(json!({
               "type": "vp_token",
-              "client_id": "https://verifier.example.org",
-              "client_id_scheme": "redirect_uri",
+              "client_id": "redirect_uri:https://verifier.example.org",
               "response_uri": "https://verifier.example.org/response",
               "response_type": "vp_token",
               "response_mode": "direct_post",
@@ -834,12 +832,14 @@ mod tests {
                       },
                       "claims": [
                         {
-                          "namespace": "org.iso.7367.1",
-                          "claim_name": "vehicle_holder"
+                            "namespace": "org.iso.7367.1",
+                            "claim_name": "vehicle_holder",
+                            "path": ["last_name"]
                         },
                         {
-                          "namespace": "org.iso.18013.5.1",
-                          "claim_name": "first_name"
+                            "namespace": "org.iso.18013.5.1",
+                            "claim_name": "first_name",
+                            "path": ["last_name"]
                         }
                       ]
                     },
@@ -851,12 +851,14 @@ mod tests {
                       },
                       "claims": [
                         {
-                          "namespace": "org.iso.7367.1",
-                          "claim_name": "vehicle_holder"
+                            "namespace": "org.iso.7367.1",
+                            "claim_name": "vehicle_holder",
+                            "path": ["last_name"]
                         },
                         {
-                          "namespace": "org.iso.18013.5.1",
-                          "claim_name": "first_name"
+                            "namespace": "org.iso.18013.5.1",
+                            "claim_name": "first_name",
+                            "path": ["last_name"]
                         }
                       ]
                     }
@@ -888,8 +890,7 @@ mod tests {
         serde_json::from_value(
             json!({
               "response_type": "vp_token",
-              "client_id": "https://verifier.example.org",
-              "client_id_scheme": "redirect_uri",
+              "client_id": "redirect_uri:https://verifier.example.org",
               "redirect_uri": "https://verifier.example.org/callback",
               "scope": "openid",
               "nonce": "n-0S6_WzA2Mj",

@@ -337,7 +337,7 @@ impl<'de> Deserialize<'de> for CompiledJsonSchema {
 /// must satisfy to fulfill an Input Descriptor.
 ///
 /// For more information, see: [https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object](https://identity.foundation/presentation-exchange/spec/v2.0.0/#input-descriptor-object)
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConstraintsField {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -400,7 +400,13 @@ impl ConstraintsField {
     pub fn new(path: JsonPath) -> ConstraintsField {
         ConstraintsField {
             path: NonEmptyVec::new(path),
-            ..Default::default()
+            id: None,
+            name: None,
+            purpose: None,
+            optional: None,
+            filter: None,
+            predicate: None,
+            intent_to_retain: false,
         }
     }
 

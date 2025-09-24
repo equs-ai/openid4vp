@@ -14,14 +14,14 @@ use crate::{
         metadata::{parameters::wallet::RequestObjectSigningAlgValuesSupported, WalletMetadata},
         object::ParsingErrorContext,
     },
-    verifier::client::X509SanVariant,
+    verifier::client::X509Variant,
 };
 
 use super::verifier::Verifier;
 
-/// Default implementation of request validation for `client_id_scheme` `x509_san_dns`.
+/// Default implementation of request validation for `client_id_prefix` `x509_san_dns`.
 pub fn validate<V: Verifier>(
-    x509_san_variant: X509SanVariant,
+    x509_san_variant: X509Variant,
     wallet_metadata: &WalletMetadata,
     request_object: &AuthorizationRequestObject,
     request_jwt: String,
@@ -29,7 +29,7 @@ pub fn validate<V: Verifier>(
 ) -> Result<()> {
     let client_id = request_object.client_id().get_id();
     let client_id_source = client_id
-        .strip_prefix(&format!("{}:", String::from(x509_san_variant.to_scheme())))
+        .strip_prefix(&format!("{}:", String::from(x509_san_variant.to_prefix())))
         .unwrap_or(&client_id);
     let (headers_b64, body_b64, sig_b64) = ssi::claims::jws::split_jws(&request_jwt)?;
 
@@ -84,15 +84,15 @@ pub fn validate<V: Verifier>(
         })
         .flatten()
         .filter_map(|gn| match (gn, x509_san_variant) {
-            (GeneralName::DnsName(uri), X509SanVariant::Dns) => Some(uri.to_string()),
-            (gn, X509SanVariant::Dns) => {
+            (GeneralName::DnsName(uri), X509Variant::SanDns) => Some(uri.to_string()),
+            (gn, X509Variant::SanDns) => {
                 debug!("found non-DNS SAN: {gn:?}");
                 None
             }
-            (GeneralName::UniformResourceIdentifier(uri), X509SanVariant::Uri) => {
+            (GeneralName::UniformResourceIdentifier(uri), X509Variant::Hash) => {
                 Some(uri.to_string())
             }
-            (gn, X509SanVariant::Uri) => {
+            (gn, X509Variant::Hash) => {
                 debug!("found non-URI SAN: {gn:?}");
                 None
             }
