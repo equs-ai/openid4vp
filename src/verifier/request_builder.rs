@@ -120,7 +120,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
                 self.request_parameters
                     .insert(ResponseUri(self.verifier.submission_endpoint.clone()));
             }
-            Ok(ResponseMode::DCAPI) | Ok(ResponseMode::DCAPIJwt) | Err(_) => {
+            Ok(ResponseMode::Fragment) | Ok(ResponseMode::FragmentJwt) | Err(_) => {
                 self.request_parameters
                     .insert(RedirectUri(self.verifier.submission_endpoint.clone()));
             }
