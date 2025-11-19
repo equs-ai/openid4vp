@@ -17,7 +17,7 @@ pub mod request_builder;
 pub struct Verifier<C: Client + WasmNotSend + WasmNotSync> {
     client: C,
     default_request_params: UntypedObject,
-    submission_endpoint: Url,
+    submission_endpoint: Option<Url>,
 }
 
 impl<C: Client + WasmNotSend + WasmNotSync> Verifier<C> {
@@ -55,10 +55,6 @@ impl<C: Client + WasmNotSend + WasmNotSync> VerifierBuilder<C> {
 
         let Some(client) = client else {
             bail!("client is required, see `with_client`")
-        };
-
-        let Some(submission_endpoint) = submission_endpoint else {
-            bail!("submission endpoint is required, see `with_submission_endpoint`")
         };
 
         Ok(Verifier {

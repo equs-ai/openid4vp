@@ -15,7 +15,8 @@ use self::parameters::{
 };
 use super::object::{ParsingErrorContext, UntypedObject};
 use crate::core::authorization_request::parameters::{
-    ClientMetadata, HttpMethodForAuth, State, TransactionData, TransactionDataItem, WalletNonce,
+    ClientMetadata, ExpectedOrigins, HttpMethodForAuth, State, TransactionData,
+    TransactionDataItem, WalletNonce,
 };
 use crate::core::authorization_request::verification::verify_request;
 use crate::core::dcql::DCQL;
@@ -43,9 +44,10 @@ pub struct AuthorizationRequestObject {
     response_mode: ResponseMode,
     response_type: ResponseType,
     presentation_query: PresentationQuery,
-    return_uri: Url,
+    return_uri: Option<Url>,
     nonce: Nonce,
     client_metadata: ClientMetadata,
+    expected_origins: Option<ExpectedOrigins>,
 }
 
 /// An Authorization Request.
@@ -366,8 +368,8 @@ impl AuthorizationRequestObject {
     /// Uri to submit the response at.
     ///
     /// AKA [ResponseUri] or [RedirectUri] depending on [ResponseMode].
-    pub fn return_uri(&self) -> &Url {
-        &self.return_uri
+    pub fn return_uri(&self) -> Option<&Url> {
+        self.return_uri.as_ref()
     }
 
     pub fn nonce(&self) -> &Nonce {
@@ -376,6 +378,10 @@ impl AuthorizationRequestObject {
 
     pub fn client_metadata(&self) -> &ClientMetadata {
         &self.client_metadata
+    }
+
+    pub fn expected_origins(&self) -> Option<&ExpectedOrigins> {
+        self.expected_origins.as_ref()
     }
 }
 
@@ -398,40 +404,52 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
         let client_id: ClientId = value.get().parsing_error()?;
         let redirect_uri = value.get::<RedirectUri>();
         let response_uri = value.get::<ResponseUri>();
-
+        let mut expected_origins: Option<ExpectedOrigins> = None;
         let (return_uri, response_mode) = match (
             redirect_uri,
             response_uri,
             value.get_or_default::<ResponseMode>()?,
         ) {
-            (Some(uri), None, mode @ ResponseMode::Fragment | mode @ ResponseMode::FragmentJwt) => (
-                uri.parsing_error()
+            (Some(uri), None, mode @ ResponseMode::Fragment | mode @ ResponseMode::FragmentJwt) => {
+                let url = uri.parsing_error()
                     .map_err(|e| {
                         Error::protocol_invalid_req(
                             "could not parse a 'redirect_uri'",
                             state.clone(),
                         )
-                        .add_source(e.into())
+                            .add_source(e.into())
                     })?
-                    .0,
-                mode,
-            ),
+                    .0;
+                (Some(url), mode)
+            },
             (
                 None,
                 Some(uri),
                 mode @ ResponseMode::DirectPost | mode @ ResponseMode::DirectPostJwt,
-            ) => (
-                uri.parsing_error()
+            ) => {
+                let url = uri.parsing_error()
                     .map_err(|e| {
                         Error::protocol_invalid_req(
-                            "could not parse a 'response_uri'",
+                            "could not parse a 'redirect_uri'",
                             state.clone(),
                         )
-                        .add_source(e.into())
+                            .add_source(e.into())
                     })?
-                    .0,
-                mode,
-            ),
+                    .0;
+                (Some(url), mode)
+            },
+            (None, None, mode @ ResponseMode::DcApi | mode @ ResponseMode::DcApiJwt) => {
+                 expected_origins  = value
+                    .get::<ExpectedOrigins>()
+                    .and_then(|result| result.ok());
+                (None, mode)
+            }
+            (_, _, mode @ ResponseMode::DcApi | mode @ ResponseMode::DcApiJwt) => {
+                return Err(Error::protocol_invalid_req(
+                    &format!("'response_uri/redirect_uri' is not allowed with this '{mode}' response mode"),
+                    state.clone(),
+                ))
+            }
             (_, _, ResponseMode::Unsupported(m)) => {
                 return Err(Error::protocol_invalid_req(
                     &format!("'{m}' response_mode is not supported"),
@@ -509,6 +527,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
             return_uri,
             nonce,
             client_metadata,
+            expected_origins,
         })
     }
 }
@@ -532,7 +551,7 @@ impl SignedAuthorizationRequest {
     pub async fn resolve_response_uri_and_mode<W>(
         &self,
         wallet: &W,
-    ) -> Result<(Url, ResponseMode), Error>
+    ) -> Result<(Option<Url>, ResponseMode), Error>
     where
         W: Wallet,
     {
@@ -549,7 +568,7 @@ impl SignedAuthorizationRequest {
 
         self.validate_nonce(wallet, &aro).await?;
 
-        Ok((aro.return_uri().to_owned(), aro.response_mode().to_owned()))
+        Ok((aro.return_uri().cloned(), aro.response_mode().to_owned()))
     }
 
     pub(crate) fn to_url(self, mut authorization_endpoint: Url) -> Result<Url, Error> {

@@ -7,7 +7,7 @@ use crate::core::{
     metadata::parameters::verifier::JWKs,
     object::{TypedParameter, UntypedObject},
 };
-use crate::utils::from_string_or_value;
+use crate::utils::{from_string_or_value, NonEmptyVec};
 use anyhow::{anyhow, Error};
 use base64::engine::general_purpose;
 use base64::prelude::BASE64_URL_SAFE_NO_PAD;
@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{Value as Json, Value};
 use std::fmt::Display;
 use std::{fmt, ops::Deref};
-use url::Url;
+use url::{Origin, Url};
 
 pub const DECENTRALIZED_IDENTIFIER: &str = "decentralized_identifier";
 pub const OPENID_FEDERATION: &str = "openid_federation";
@@ -489,6 +489,8 @@ const DIRECT_POST: &str = "direct_post";
 const DIRECT_POST_JWT: &str = "direct_post.jwt";
 const FRAGMENT: &str = "fragment";
 const FRAGMENT_JWT: &str = "fragment.jwt";
+const DC_API: &str = "dc_api";
+const DC_API_JWT: &str = "dc_api.jwt";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(into = "String", from = "String")]
@@ -502,6 +504,11 @@ pub enum ResponseMode {
     Fragment,
     /// The `fragment.jwt` response mode as defined in OID4VP.
     FragmentJwt,
+    /// The `dc_api` response mode as defined in OID4VP.
+    DcApi,
+    /// The `dc_api.jwt` response mode as defined in OID4VP.
+    DcApiJwt,
+
     /// A ResponseMode that is unsupported by this library.
     Unsupported(String),
 }
@@ -517,6 +524,8 @@ impl From<String> for ResponseMode {
             DIRECT_POST_JWT => ResponseMode::DirectPostJwt,
             FRAGMENT => ResponseMode::Fragment,
             FRAGMENT_JWT => ResponseMode::FragmentJwt,
+            DC_API => ResponseMode::DcApi,
+            DC_API_JWT => ResponseMode::DcApiJwt,
             _ => ResponseMode::Unsupported(s),
         }
     }
@@ -529,6 +538,8 @@ impl From<ResponseMode> for String {
             ResponseMode::DirectPostJwt => DIRECT_POST_JWT.into(),
             ResponseMode::Fragment => FRAGMENT.into(),
             ResponseMode::FragmentJwt => FRAGMENT_JWT.into(),
+            ResponseMode::DcApi => DC_API.into(),
+            ResponseMode::DcApiJwt => DC_API_JWT.into(),
             ResponseMode::Unsupported(u) => u,
         }
     }
@@ -556,6 +567,8 @@ impl Display for ResponseMode {
             ResponseMode::DirectPostJwt => DIRECT_POST_JWT,
             ResponseMode::Fragment => FRAGMENT,
             ResponseMode::FragmentJwt => FRAGMENT_JWT,
+            ResponseMode::DcApi => DC_API,
+            ResponseMode::DcApiJwt => DC_API_JWT,
             ResponseMode::Unsupported(u) => u,
         }
         .fmt(f)
@@ -783,6 +796,53 @@ impl TryFrom<String> for HashAlgorithm {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct ExpectedOrigins(NonEmptyVec<Origin>);
+
+impl ExpectedOrigins {
+    pub fn new(origins: NonEmptyVec<Origin>) -> Self {
+        Self(origins)
+    }
+
+    pub fn origins(&self) -> &NonEmptyVec<Origin> {
+        &self.0
+    }
+}
+
+impl TypedParameter for ExpectedOrigins {
+    const KEY: &'static str = "expected_origins";
+}
+
+impl From<ExpectedOrigins> for Json {
+    fn from(origins: ExpectedOrigins) -> Self {
+        Value::Array(
+            origins
+                .0
+                .into_iter()
+                .map(|u| u.unicode_serialization().into())
+                .collect(),
+        )
+    }
+}
+
+impl TryFrom<Json> for ExpectedOrigins {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        let urls: NonEmptyVec<String> = serde_json::from_value(value)?;
+        let mut origins = vec![];
+        for url_str in urls {
+            let origin = Url::parse(&url_str)?.origin();
+            origins.push(origin);
+        }
+
+        NonEmptyVec::maybe_new(origins)
+            .map(|origins| Ok(Self(origins)))
+            .unwrap()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::core::authorization_request::parameters::{

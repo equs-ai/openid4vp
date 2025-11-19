@@ -2,7 +2,7 @@ use super::{
     parameters::{ClientIdPrefix, ClientMetadata},
     AuthorizationRequestObject, FetchedAuthorizationRequest,
 };
-use crate::core::authorization_request::parameters::ResponseType;
+use crate::core::authorization_request::parameters::{ResponseMode, ResponseType};
 use crate::core::error::{Error, ErrorType};
 use crate::core::metadata::parameters::{SubjectSyntaxTypesSupported, VpFormatsSupported};
 use crate::core::metadata::WalletMetadata;
@@ -146,7 +146,19 @@ where
 {
     let request = match fetched_request {
         FetchedAuthorizationRequest::Plain(request) => {
-            wallet.redirect_uri(&request, request.return_uri()).await?;
+            if let Some(uri) = request.return_uri() {
+                wallet.redirect_uri(&request, &uri).await?;
+            } else if request.response_mode != ResponseMode::DcApi
+                && request.response_mode != ResponseMode::DcApiJwt
+            {
+                return Err(Error::protocol_invalid_req(
+                    &format!(
+                        "'response_uri/redirect_uri' is required when response_mode is '{}'",
+                        request.response_mode
+                    ),
+                    request.state(),
+                ));
+            }
             request
         }
         FetchedAuthorizationRequest::UnverifiedJwt(jwt) => {
