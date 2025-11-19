@@ -97,6 +97,11 @@ pub trait Wallet: RequestVerifier + WasmNotSync {
 
                 return Ok(Some(redirect_url));
             }
+            rm @ ResponseMode::DcApi | rm @ ResponseMode::DcApiJwt => {
+                return Err(Error::internal(anyhow!(
+                    "in response_mode {rm}, authorization response could not be submitted"
+                )))
+            }
             ResponseMode::Unsupported(rm) => {
                 return Err(Error::internal(anyhow!("unsupported response_mode {rm}")))
             }

@@ -3,7 +3,9 @@ use std::collections::HashSet;
 use url::Url;
 
 use super::Verifier;
-use crate::core::authorization_request::parameters::{ClientMetadata, RedirectUri, ResponseUri};
+use crate::core::authorization_request::parameters::{
+    ClientId, ClientMetadata, ExpectedOrigins, RedirectUri, ResponseUri,
+};
 use crate::core::authorization_request::SignedAuthorizationRequest;
 use crate::core::dcql::DCQL;
 use crate::core::error::Error;
@@ -108,23 +110,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
             )));
         }
 
-        match self
-            .request_parameters
-            .get::<ResponseMode>()
-            .context("error occurred when retrieving response mode")?
-        {
-            Ok(ResponseMode::Unsupported(r)) => {
-                return Err(Error::internal(anyhow!("unsupported response_mode: {r}")))
-            }
-            Ok(ResponseMode::DirectPost) | Ok(ResponseMode::DirectPostJwt) => {
-                self.request_parameters
-                    .insert(ResponseUri(self.verifier.submission_endpoint.clone()));
-            }
-            Ok(ResponseMode::Fragment) | Ok(ResponseMode::FragmentJwt) | Err(_) => {
-                self.request_parameters
-                    .insert(RedirectUri(self.verifier.submission_endpoint.clone()));
-            }
-        }
+        self.build_helper(&request_type)?;
         let authorization_request_object: AuthorizationRequestObject =
             self.request_parameters.try_into().context(
                 "unable to construct the Authorization Request from provided request parameters",
@@ -166,6 +152,62 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
                 Ok((authorization_request_url, Some(auth_req_jwt)))
             }
         }
+    }
+
+    fn build_helper(&mut self, request_type: &RequestType) -> Result<(), Error> {
+        let response_mode = self
+            .request_parameters
+            .get::<ResponseMode>()
+            .transpose()
+            .context("error occurred when retrieving response mode")?
+            .ok_or_else(|| Error::internal(anyhow!("'response_mode' parameter is missed")))?;
+
+        match response_mode {
+            ResponseMode::Unsupported(r) => {
+                return Err(Error::internal(anyhow!("unsupported response_mode: {r}")))
+            }
+            response_mode @ ResponseMode::DirectPost
+            | response_mode @ ResponseMode::DirectPostJwt => {
+                let Some(response_uri) = &self.verifier.submission_endpoint else {
+                    return Err(Error::internal(anyhow!(
+                        "submission endpoint is required for '{response_mode}' response mode"
+                    )));
+                };
+
+                self.request_parameters
+                    .insert(ResponseUri(response_uri.to_owned()));
+            }
+            response_mode @ ResponseMode::Fragment | response_mode @ ResponseMode::FragmentJwt => {
+                let Some(response_uri) = &self.verifier.submission_endpoint else {
+                    return Err(Error::internal(anyhow!(
+                        "submission endpoint is required for '{response_mode}' response mode"
+                    )));
+                };
+                self.request_parameters
+                    .insert(RedirectUri(response_uri.to_owned()));
+            }
+            ResponseMode::DcApi | ResponseMode::DcApiJwt => {
+                match request_type {
+                    RequestType::Plain => {
+                        self.request_parameters.remove::<ClientId>();
+                    }
+                    RequestType::SignedJwt(_) => {
+                        self.request_parameters
+                            .get::<ExpectedOrigins>()
+                            .transpose()
+                            .context("error occurred when retrieving expected origins")?
+                            .ok_or_else(|| {
+                                Error::internal(anyhow!("'expected_origins' parameter is missed"))
+                            })?;
+                    }
+                }
+
+                self.request_parameters.remove::<ResponseUri>();
+                self.request_parameters.remove::<RedirectUri>();
+            }
+        }
+
+        Ok(())
     }
 
     fn validate_dcql(dcql: &DCQL) -> Result<(), Error> {
