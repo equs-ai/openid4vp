@@ -205,7 +205,7 @@ impl Client for X509Client {
         let header = json!({
             "alg": algorithm,
             "x5c": x5c,
-            "typ": "JWT"
+            "typ": MIME_TYPE_OAUTH_REQ_JWT
         });
         generate_jwt(header, body, self.signer.as_ref()).await
     }

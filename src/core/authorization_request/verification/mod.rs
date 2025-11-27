@@ -13,6 +13,8 @@ use crate::core::{
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
+use ssi::claims::jws::{decode_jws_parts, split_jws};
 use url::Url;
 
 pub mod did;
@@ -163,7 +165,7 @@ where
         }
         FetchedAuthorizationRequest::UnverifiedJwt(jwt) => {
             let request: AuthorizationRequestObject =
-                ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
+                decode_ensure_no_signature_jwt::<UntypedObject>(&jwt)
                     .map_err(|e| {
                         Error::protocol_invalid_req(
                             "unable to decode Authorization Request Object JWT",
@@ -202,6 +204,22 @@ where
     validate_request_against_metadata(wallet, &request).await?;
 
     Ok(request)
+}
+
+fn decode_ensure_no_signature_jwt<Claims: DeserializeOwned>(
+    jwt: &str,
+) -> Result<Claims, ssi::claims::jws::Error> {
+    let (header_b64, payload_enc, signature_b64) = split_jws(jwt)?;
+
+    if signature_b64.len() == 0 {
+        let jws = decode_jws_parts(header_b64, payload_enc.as_bytes(), signature_b64)?.into_jws();
+        serde_json::from_slice(&jws.payload).map_err(|err| ssi::claims::jws::Error::Json(err))
+    } else {
+        Err(ssi::claims::jws::Error::UnexpectedSignatureLength(
+            0,
+            signature_b64.len(),
+        ))
+    }
 }
 
 pub(crate) async fn validate_request_against_metadata<W>(
@@ -244,7 +262,7 @@ fn validate_response_type(
     let state = authorization_request_object.state();
     let response_type = authorization_request_object
         .get::<ResponseType>()
-        .ok_or_else( || Error::protocol_invalid_req("'response_type' is not declared, it is a required parameter of authorization request object", state.clone()))?
+        .ok_or_else(|| Error::protocol_invalid_req("'response_type' is not declared, it is a required parameter of authorization request object", state.clone()))?
         .context("error occurred when retrieving response type")?;
 
     if !wallet_metadata
@@ -264,7 +282,7 @@ fn validate_response_type(
     if ResponseType::VpTokenIdToken == response_type {
         let subject_syntax_types_supported = authorization_request_object
             .get::<ClientMetadata>()
-            .ok_or_else( || Error::protocol_invalid_req("'client_metadata' is required when response type is 'vp_token id_token'", state.clone()))?
+            .ok_or_else(|| Error::protocol_invalid_req("'client_metadata' is required when response type is 'vp_token id_token'", state.clone()))?
             .context("error occurred when retrieving 'client_metadata'")?
             .0.get::<SubjectSyntaxTypesSupported>()
             .ok_or_else(|| Error::protocol_invalid_req("'subject_syntax_types_supported' is required when response type is 'vp_token id_token'", state.clone()))?
@@ -314,4 +332,9 @@ fn validate_vp_formats_supported(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
 }
