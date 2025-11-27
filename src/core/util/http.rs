@@ -81,6 +81,7 @@ impl AsyncHttpClient for ReqwestClient {
 pub const MIME_TYPE_JSON: &str = "application/json";
 pub const MIME_TYPE_FORM_URLENCODED: &str = "application/x-www-form-urlencoded";
 pub const MIME_TYPE_OAUTH_REQ_JWT: &str = "application/oauth-authz-req+jwt";
+pub const MIME_TYPE_OAUTH_REQ_JWT_SHORT: &str = "oauth-authz-req+jwt";
 pub const MIME_TYPE_TEXT_PLAIN: &str = "text/plain";
 
 pub fn create_post_request(
