@@ -13,6 +13,8 @@ use crate::core::{
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
+use ssi::claims::jws::{decode_jws_parts, split_jws};
 use url::Url;
 
 pub mod did;
@@ -163,7 +165,7 @@ where
         }
         FetchedAuthorizationRequest::UnverifiedJwt(jwt) => {
             let request: AuthorizationRequestObject =
-                ssi::claims::jwt::decode_unverified::<UntypedObject>(&jwt)
+                decode_ensure_unsigned_jwt::<UntypedObject>(&jwt)
                     .map_err(|e| {
                         Error::protocol_invalid_req(
                             "unable to decode Authorization Request Object JWT",
@@ -202,6 +204,22 @@ where
     validate_request_against_metadata(wallet, &request).await?;
 
     Ok(request)
+}
+
+fn decode_ensure_unsigned_jwt<Claims: DeserializeOwned>(
+    jwt: &str,
+) -> Result<Claims, ssi::claims::jws::Error> {
+    let (header_b64, payload_enc, signature_b64) = split_jws(jwt)?;
+
+    if signature_b64.len() == 0 {
+        let jws = decode_jws_parts(header_b64, payload_enc.as_bytes(), signature_b64)?.into_jws();
+        serde_json::from_slice(&jws.payload).map_err(|err| ssi::claims::jws::Error::Json(err))
+    } else {
+        Err(ssi::claims::jws::Error::UnexpectedSignatureLength(
+            0,
+            signature_b64.len(),
+        ))
+    }
 }
 
 pub(crate) async fn validate_request_against_metadata<W>(
@@ -314,4 +332,25 @@ fn validate_vp_formats_supported(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::unsigned_jwt(UNSIGNED_AUTH_REQUEST_JWT)]
+    #[should_panic(expected = "Expected signature length 0")]
+    #[case::signed_jwt(SIGNED_AUTH_REQUEST_JWT)]
+    fn decode_ensure_unsigned_jwt(#[case] jwt: &str) {
+        super::decode_ensure_unsigned_jwt::<UntypedObject>(jwt)
+            .map_err(|err| err.to_string())
+            .unwrap();
+    }
+
+    const UNSIGNED_AUTH_REQUEST_JWT: &str =
+        "eyJhbGciOiJub25lIn0.eyJyZXNwb25zZV91cmkiOiJodHRwczovL2RlbW8uY2VydGlmaWNhdGlvbi5vcGVuaWQubmV0L3Rlc3QvYS9ob2xkZXIvcmVzcG9uc2V1cmkiLCJyZXNwb25zZV90eXBlIjoidnBfdG9rZW4iLCJkY3FsX3F1ZXJ5Ijp7ImNyZWRlbnRpYWxzIjpbeyJpZCI6InBpZCIsImZvcm1hdCI6ImRjK3NkLWp3dCIsIm1ldGEiOnt9LCJjbGFpbXMiOlt7ImlkIjoiMSIsInBhdGgiOlsidXNlcm5hbWUiXX0seyJpZCI6IjIiLCJwYXRoIjpbImVtYWlsIiwid29yayJdfSx7ImlkIjoiMyIsInBhdGgiOlsiYWdlX292ZXJfMTgiXX0seyJpZCI6IjQiLCJwYXRoIjpbImNvdW50cnkiXX1dLCJjbGFpbV9zZXRzIjpbWyIxIl0sWyIyIl0sWyIzIl0sWyI0Il1dfV19LCJub25jZSI6IkQybjc5R0QwWWdIVC0uX34iLCJjbGllbnRfaWQiOiJyZWRpcmVjdF91cmk6aHR0cHM6Ly9kZW1vLmNlcnRpZmljYXRpb24ub3BlbmlkLm5ldC90ZXN0L2EvaG9sZGVyL3Jlc3BvbnNldXJpIiwiY2xpZW50X21ldGFkYXRhIjp7InZwX2Zvcm1hdHMiOnsiZGMrc2Qtand0Ijp7InNkLWp3dF9hbGdfdmFsdWVzIjpbIlJTMjU2IiwiUlMzODQiLCJSUzUxMiIsIlBTMjU2IiwiUFMzODQiLCJQUzUxMiIsIkVTMjU2IiwiRVMyNTZLIiwiRVMzODQiLCJFUzUxMiIsIkVkRFNBIiwiRWQyNTUxOSIsIkVkNDQ4Il0sImtiLWp3dF9hbGdfdmFsdWVzIjpbIlJTMjU2IiwiUlMzODQiLCJSUzUxMiIsIlBTMjU2IiwiUFMzODQiLCJQUzUxMiIsIkVTMjU2IiwiRVMyNTZLIiwiRVMzODQiLCJFUzUxMiIsIkVkRFNBIiwiRWQyNTUxOSIsIkVkNDQ4Il19fX0sInJlc3BvbnNlX21vZGUiOiJkaXJlY3RfcG9zdCJ9.";
+
+    const SIGNED_AUTH_REQUEST_JWT: &str = "eyJhbGciOiJFUzI1NiJ9.eyJyZXNwb25zZV91cmkiOiJodHRwczovL2RlbW8uY2VydGlmaWNhdGlvbi5vcGVuaWQubmV0L3Rlc3QvYS9ob2xkZXIvcmVzcG9uc2V1cmkiLCJhdWQiOiJodHRwczovL3NlbGYtaXNzdWVkLm1lL3YyIiwicmVzcG9uc2VfdHlwZSI6InZwX3Rva2VuIiwiZGNxbF9xdWVyeSI6eyJjcmVkZW50aWFscyI6W3siaWQiOiJwaWQiLCJmb3JtYXQiOiJkYytzZC1qd3QiLCJtZXRhIjp7fSwiY2xhaW1zIjpbeyJpZCI6IjEiLCJwYXRoIjpbInVzZXJuYW1lIl19LHsiaWQiOiIyIiwicGF0aCI6WyJlbWFpbCIsIndvcmsiXX0seyJpZCI6IjMiLCJwYXRoIjpbImFnZV9vdmVyXzE4Il19LHsiaWQiOiI0IiwicGF0aCI6WyJjb3VudHJ5Il19XSwiY2xhaW1fc2V0cyI6W1siMSJdLFsiMiJdLFsiMyJdLFsiNCJdXX1dfSwibm9uY2UiOiJFQ2pObEY0Zm1pNmotLl9-IiwiY2xpZW50X2lkIjoicmVkaXJlY3RfdXJpOmh0dHBzOi8vZGVtby5jZXJ0aWZpY2F0aW9uLm9wZW5pZC5uZXQvdGVzdC9hL2hvbGRlci9yZXNwb25zZXVyaSIsImNsaWVudF9tZXRhZGF0YSI6eyJ2cF9mb3JtYXRzIjp7ImRjK3NkLWp3dCI6eyJzZC1qd3RfYWxnX3ZhbHVlcyI6WyJSUzI1NiIsIlJTMzg0IiwiUlM1MTIiLCJQUzI1NiIsIlBTMzg0IiwiUFM1MTIiLCJFUzI1NiIsIkVTMjU2SyIsIkVTMzg0IiwiRVM1MTIiLCJFZERTQSIsIkVkMjU1MTkiLCJFZDQ0OCJdLCJrYi1qd3RfYWxnX3ZhbHVlcyI6WyJSUzI1NiIsIlJTMzg0IiwiUlM1MTIiLCJQUzI1NiIsIlBTMzg0IiwiUFM1MTIiLCJFUzI1NiIsIkVTMjU2SyIsIkVTMzg0IiwiRVM1MTIiLCJFZERTQSIsIkVkMjU1MTkiLCJFZDQ0OCJdfX19LCJyZXNwb25zZV9tb2RlIjoiZGlyZWN0X3Bvc3QifQ.cexQqpqGG5yyg6OdrEKp6VLfYHvzuvWvglsQVBuPVwGT3P_OiysP_Xl43mbPioF2O2_qu9xbLxcgo-jbO8fQ6w";
 }
