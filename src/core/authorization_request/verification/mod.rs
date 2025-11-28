@@ -143,22 +143,22 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: &str,
     ) -> Result<(), Error> {
-        if is_unsigned_jwt(request_jwt).map_err(|e| {
+        let unsigned_jwt = is_unsigned_jwt(request_jwt).map_err(|e| {
             Error::protocol_invalid_req("unable to decode Authorization Request Object JWT", None)
                 .add_source(e.into())
-        })? {
-            if let Some(return_url) = &decoded_request.return_uri {
-                self.redirect_uri(decoded_request, return_url).await
-            } else {
-                Err(Error::internal(anyhow::Error::msg(
-                    "redirect_uri_jwt was called for a request without return_uri",
-                )))
-            }
-        } else {
-            Err(Error::protocol_invalid_req(
+        })?;
+        if !unsigned_jwt {
+            return Err(Error::protocol_invalid_req(
                 "Client id prefix 'redirect_uri' can not be used in signed auth requests",
                 decoded_request.state().clone(),
-            ))
+            ));
+        }
+        if let Some(return_url) = &decoded_request.return_uri {
+            self.redirect_uri(decoded_request, return_url).await
+        } else {
+            Err(Error::internal(anyhow::Error::msg(
+                "redirect_uri_jwt was called for a request without return_uri",
+            )))
         }
     }
 }
@@ -268,9 +268,9 @@ fn validate_response_type(
 ) -> Result<(), Error> {
     let state = authorization_request_object.state();
     let response_type = authorization_request_object
-        .get::<ResponseType>()
-        .ok_or_else(|| Error::protocol_invalid_req("'response_type' is not declared, it is a required parameter of authorization request object", state.clone()))?
-        .context("error occurred when retrieving response type")?;
+            .get::<ResponseType>()
+            .ok_or_else(|| Error::protocol_invalid_req("'response_type' is not declared, it is a required parameter of authorization request object", state.clone()))?
+            .context("error occurred when retrieving response type")?;
 
     if !wallet_metadata
         .response_types_supported()
@@ -288,12 +288,12 @@ fn validate_response_type(
 
     if ResponseType::VpTokenIdToken == response_type {
         let subject_syntax_types_supported = authorization_request_object
-            .get::<ClientMetadata>()
-            .ok_or_else(|| Error::protocol_invalid_req("'client_metadata' is required when response type is 'vp_token id_token'", state.clone()))?
-            .context("error occurred when retrieving 'client_metadata'")?
-            .0.get::<SubjectSyntaxTypesSupported>()
-            .ok_or_else(|| Error::protocol_invalid_req("'subject_syntax_types_supported' is required when response type is 'vp_token id_token'", state.clone()))?
-            .context("error occurred when retrieving 'subject_syntax_types_supported'")?;
+                .get::<ClientMetadata>()
+                .ok_or_else(|| Error::protocol_invalid_req("'client_metadata' is required when response type is 'vp_token id_token'", state.clone()))?
+                .context("error occurred when retrieving 'client_metadata'")?
+                .0.get::<SubjectSyntaxTypesSupported>()
+                .ok_or_else(|| Error::protocol_invalid_req("'subject_syntax_types_supported' is required when response type is 'vp_token id_token'", state.clone()))?
+                .context("error occurred when retrieving 'subject_syntax_types_supported'")?;
 
         let unsupported = subject_syntax_types_supported.0.iter().find(|s| {
             !wallet_metadata
