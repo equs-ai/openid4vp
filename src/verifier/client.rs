@@ -19,7 +19,7 @@ use crate::core::authorization_request::{
     parameters::{ClientId, ClientIdPrefix},
     AuthorizationRequestObject,
 };
-use crate::core::util::http::MIME_TYPE_OAUTH_REQ_JWT;
+use crate::core::util::http::MIME_TYPE_OAUTH_REQ_JWT_SHORT;
 use crate::signer::Signer;
 use crate::utils::{generate_jwt, WasmNotSync};
 
@@ -168,7 +168,7 @@ impl<S: Signer + WasmNotSync> Client for DecentralizedIdentifierClient<S> {
         let header = json!({
             "alg": algorithm,
             "kid": self.vm,
-            "typ": MIME_TYPE_OAUTH_REQ_JWT
+            "typ": MIME_TYPE_OAUTH_REQ_JWT_SHORT
         });
         generate_jwt(header, body, &self.signer).await
     }
@@ -205,7 +205,7 @@ impl Client for X509Client {
         let header = json!({
             "alg": algorithm,
             "x5c": x5c,
-            "typ": "JWT"
+            "typ": MIME_TYPE_OAUTH_REQ_JWT_SHORT
         });
         generate_jwt(header, body, self.signer.as_ref()).await
     }

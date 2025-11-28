@@ -3,7 +3,7 @@ use super::{
     AuthorizationRequestObject, FetchedAuthorizationRequest,
 };
 use crate::core::authorization_request::parameters::{ResponseMode, ResponseType};
-use crate::core::error::{Error, ErrorType};
+use crate::core::error::{Error, ErrorType, ProtocolError};
 use crate::core::metadata::parameters::{SubjectSyntaxTypesSupported, VpFormatsSupported};
 use crate::core::metadata::WalletMetadata;
 use crate::core::{
@@ -13,6 +13,8 @@ use crate::core::{
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
+use ssi::claims::jws::{decode_jws_parts, split_jws};
 use url::Url;
 
 pub mod did;
@@ -135,6 +137,30 @@ pub trait RequestVerifier {
             state.clone(),
         ))
     }
+
+    async fn redirect_uri_jwt(
+        &self,
+        decoded_request: &AuthorizationRequestObject,
+        request_jwt: &str,
+    ) -> Result<(), Error> {
+        if is_unsigned_jwt(request_jwt).map_err(|e| {
+            Error::protocol_invalid_req("unable to decode Authorization Request Object JWT", None)
+                .add_source(e.into())
+        })? {
+            if let Some(return_url) = &decoded_request.return_uri {
+                self.redirect_uri(decoded_request, return_url).await
+            } else {
+                Err(Error::internal(anyhow::Error::msg(
+                    "redirect_uri_jwt was called for a request without return_uri",
+                )))
+            }
+        } else {
+            Err(Error::protocol_invalid_req(
+                "Client id prefix 'redirect_uri' can not be used in signed auth requests",
+                decoded_request.state().clone(),
+            ))
+        }
+    }
 }
 
 pub(crate) async fn verify_request<W>(
@@ -185,14 +211,7 @@ where
                 ClientIdPrefix::Origin => wallet.origin(&request, jwt).await?,
                 ClientIdPrefix::X509SanDns => wallet.x509_san_dns(&request, jwt).await?,
                 ClientIdPrefix::X509Hash => wallet.x509_hash(&request, jwt).await?,
-                //  request cannot be signed for ClientIdPrefix::RedirectUri. link: https://openid.net/specs/openid-4-verifiable-presentations-1_0-24.html#name-defined-client-identifier-s
-                ClientIdPrefix::RedirectUri => {
-                    return Err(Error::protocol(
-                        ErrorType::WrongClientIdPrefix,
-                        "Redirect uri prefix is not supported with signed request type",
-                        None,
-                    ));
-                }
+                ClientIdPrefix::RedirectUri => wallet.redirect_uri_jwt(&request, &jwt).await?,
             }
 
             request
@@ -202,6 +221,12 @@ where
     validate_request_against_metadata(wallet, &request).await?;
 
     Ok(request)
+}
+
+fn is_unsigned_jwt(jwt: &str) -> Result<bool, ssi::claims::jws::Error> {
+    let (_, _, signature) = split_jws(jwt)?;
+
+    Ok(signature.len() == 0)
 }
 
 pub(crate) async fn validate_request_against_metadata<W>(
@@ -244,7 +269,7 @@ fn validate_response_type(
     let state = authorization_request_object.state();
     let response_type = authorization_request_object
         .get::<ResponseType>()
-        .ok_or_else( || Error::protocol_invalid_req("'response_type' is not declared, it is a required parameter of authorization request object", state.clone()))?
+        .ok_or_else(|| Error::protocol_invalid_req("'response_type' is not declared, it is a required parameter of authorization request object", state.clone()))?
         .context("error occurred when retrieving response type")?;
 
     if !wallet_metadata
@@ -264,7 +289,7 @@ fn validate_response_type(
     if ResponseType::VpTokenIdToken == response_type {
         let subject_syntax_types_supported = authorization_request_object
             .get::<ClientMetadata>()
-            .ok_or_else( || Error::protocol_invalid_req("'client_metadata' is required when response type is 'vp_token id_token'", state.clone()))?
+            .ok_or_else(|| Error::protocol_invalid_req("'client_metadata' is required when response type is 'vp_token id_token'", state.clone()))?
             .context("error occurred when retrieving 'client_metadata'")?
             .0.get::<SubjectSyntaxTypesSupported>()
             .ok_or_else(|| Error::protocol_invalid_req("'subject_syntax_types_supported' is required when response type is 'vp_token id_token'", state.clone()))?
