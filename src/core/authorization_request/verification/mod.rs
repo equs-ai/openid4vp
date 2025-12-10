@@ -3,7 +3,7 @@ use super::{
     AuthorizationRequestObject, FetchedAuthorizationRequest,
 };
 use crate::core::authorization_request::parameters::{ResponseMode, ResponseType};
-use crate::core::error::{Error, ErrorType, ProtocolError};
+use crate::core::error::Error;
 use crate::core::metadata::parameters::{SubjectSyntaxTypesSupported, VpFormatsSupported};
 use crate::core::metadata::WalletMetadata;
 use crate::core::{
@@ -13,8 +13,7 @@ use crate::core::{
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use serde::de::DeserializeOwned;
-use ssi::claims::jws::{decode_jws_parts, split_jws};
+use ssi::claims::jws::split_jws;
 use url::Url;
 
 pub mod did;
@@ -143,11 +142,11 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: &str,
     ) -> Result<(), Error> {
-        let unsigned_jwt = is_unsigned_jwt(request_jwt).map_err(|e| {
+        let signed = is_signed_jwt(request_jwt).map_err(|e| {
             Error::protocol_invalid_req("unable to decode Authorization Request Object JWT", None)
                 .add_source(e.into())
         })?;
-        if !unsigned_jwt {
+        if signed {
             return Err(Error::protocol_invalid_req(
                 "Client id prefix 'redirect_uri' can not be used in signed auth requests",
                 decoded_request.state().clone(),
@@ -223,10 +222,12 @@ where
     Ok(request)
 }
 
-fn is_unsigned_jwt(jwt: &str) -> Result<bool, ssi::claims::jws::Error> {
+/// Checks that JWT token has non-empty signature part.
+/// Does **not** validate signature.
+fn is_signed_jwt(jwt: &str) -> Result<bool, ssi::claims::jws::Error> {
     let (_, _, signature) = split_jws(jwt)?;
 
-    Ok(signature.len() == 0)
+    Ok(signature.len() > 0)
 }
 
 pub(crate) async fn validate_request_against_metadata<W>(
