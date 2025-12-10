@@ -266,6 +266,8 @@ pub struct DcqlMeta {
     vct_values: Option<NonEmptyVec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     type_values: Option<NonEmptyVec<NonEmptyVec<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    doctype_value: Option<String>,
 }
 
 impl DcqlMeta {
@@ -273,6 +275,7 @@ impl DcqlMeta {
         Self {
             vct_values: None,
             type_values: None,
+            doctype_value: None,
         }
     }
     pub fn vct_values(&self) -> Option<&NonEmptyVec<String>> {
@@ -288,6 +291,14 @@ impl DcqlMeta {
     }
     pub fn set_type_values(mut self, values: NonEmptyVec<NonEmptyVec<String>>) -> Self {
         self.type_values = Some(values);
+        self
+    }
+
+    pub fn doctype_value(&self) -> Option<&String> {
+        self.doctype_value.as_ref()
+    }
+    pub fn set_doctype_value(mut self, value: String) -> Self {
+        self.doctype_value = Some(value);
         self
     }
 }
@@ -429,6 +440,31 @@ mod test {
         let set = set.add_option(NonEmptyVec::new("1".to_string()));
         assert_eq!(set.options().len(), 2);
     }
+
+    #[test]
+    fn test_meta_for_doctype_value() {
+        let meta = DcqlMeta::new();
+        assert_eq!(meta.doctype_value(), None);
+        let meta = meta.set_doctype_value("org.iso.18013.5.1.mDL".to_string());
+        assert_eq!(meta.doctype_value().unwrap(), &"org.iso.18013.5.1.mDL".to_string());
+    }
+
+    #[test]
+    fn test_meta_for_vct_values() {
+        let meta = DcqlMeta::new();
+        assert_eq!(meta.vct_values(), None);
+        let meta = meta.set_vct_values(NonEmptyVec::new("credential_type".to_string()));
+        assert_eq!(meta.vct_values().unwrap().first().unwrap(), &"credential_type".to_string());
+    }
+
+    #[test]
+    fn test_meta_for_type_values() {
+        let meta = DcqlMeta::new();
+        assert_eq!(meta.type_values(), None);
+        let meta = meta.set_type_values(NonEmptyVec::new(NonEmptyVec::new("credential_types".to_string())));
+        assert_eq!(meta.type_values().unwrap().first().unwrap().first().unwrap(), &"credential_types".to_string());
+    }
+
     fn get_base_dcql() -> DCQL {
         DCQL::new(NonEmptyVec::new(get_base_credential()))
     }
