@@ -3,7 +3,7 @@ use super::{
     AuthorizationRequestObject, FetchedAuthorizationRequest,
 };
 use crate::core::authorization_request::parameters::{ResponseMode, ResponseType};
-use crate::core::error::{Error, ErrorType, ProtocolError};
+use crate::core::error::Error;
 use crate::core::metadata::parameters::{SubjectSyntaxTypesSupported, VpFormatsSupported};
 use crate::core::metadata::WalletMetadata;
 use crate::core::{
@@ -13,8 +13,7 @@ use crate::core::{
 use crate::wallet::Wallet;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use serde::de::DeserializeOwned;
-use ssi::claims::jws::{decode_jws_parts, split_jws};
+use ssi::claims::jws::split_jws;
 use url::Url;
 
 pub mod did;
@@ -143,22 +142,22 @@ pub trait RequestVerifier {
         decoded_request: &AuthorizationRequestObject,
         request_jwt: &str,
     ) -> Result<(), Error> {
-        if is_unsigned_jwt(request_jwt).map_err(|e| {
+        let signed = is_signed_jwt(request_jwt).map_err(|e| {
             Error::protocol_invalid_req("unable to decode Authorization Request Object JWT", None)
                 .add_source(e.into())
-        })? {
-            if let Some(return_url) = &decoded_request.return_uri {
-                self.redirect_uri(decoded_request, return_url).await
-            } else {
-                Err(Error::internal(anyhow::Error::msg(
-                    "redirect_uri_jwt was called for a request without return_uri",
-                )))
-            }
-        } else {
-            Err(Error::protocol_invalid_req(
+        })?;
+        if signed {
+            return Err(Error::protocol_invalid_req(
                 "Client id prefix 'redirect_uri' can not be used in signed auth requests",
                 decoded_request.state().clone(),
-            ))
+            ));
+        }
+        if let Some(return_url) = &decoded_request.return_uri {
+            self.redirect_uri(decoded_request, return_url).await
+        } else {
+            Err(Error::internal(anyhow::Error::msg(
+                "redirect_uri_jwt was called for a request without return_uri",
+            )))
         }
     }
 }
@@ -223,10 +222,12 @@ where
     Ok(request)
 }
 
-fn is_unsigned_jwt(jwt: &str) -> Result<bool, ssi::claims::jws::Error> {
+/// Checks that JWT token has non-empty signature part.
+/// Does **not** validate signature.
+fn is_signed_jwt(jwt: &str) -> Result<bool, ssi::claims::jws::Error> {
     let (_, _, signature) = split_jws(jwt)?;
 
-    Ok(signature.len() == 0)
+    Ok(signature.len() > 0)
 }
 
 pub(crate) async fn validate_request_against_metadata<W>(
@@ -268,9 +269,9 @@ fn validate_response_type(
 ) -> Result<(), Error> {
     let state = authorization_request_object.state();
     let response_type = authorization_request_object
-        .get::<ResponseType>()
-        .ok_or_else(|| Error::protocol_invalid_req("'response_type' is not declared, it is a required parameter of authorization request object", state.clone()))?
-        .context("error occurred when retrieving response type")?;
+            .get::<ResponseType>()
+            .ok_or_else(|| Error::protocol_invalid_req("'response_type' is not declared, it is a required parameter of authorization request object", state.clone()))?
+            .context("error occurred when retrieving response type")?;
 
     if !wallet_metadata
         .response_types_supported()
@@ -288,12 +289,12 @@ fn validate_response_type(
 
     if ResponseType::VpTokenIdToken == response_type {
         let subject_syntax_types_supported = authorization_request_object
-            .get::<ClientMetadata>()
-            .ok_or_else(|| Error::protocol_invalid_req("'client_metadata' is required when response type is 'vp_token id_token'", state.clone()))?
-            .context("error occurred when retrieving 'client_metadata'")?
-            .0.get::<SubjectSyntaxTypesSupported>()
-            .ok_or_else(|| Error::protocol_invalid_req("'subject_syntax_types_supported' is required when response type is 'vp_token id_token'", state.clone()))?
-            .context("error occurred when retrieving 'subject_syntax_types_supported'")?;
+                .get::<ClientMetadata>()
+                .ok_or_else(|| Error::protocol_invalid_req("'client_metadata' is required when response type is 'vp_token id_token'", state.clone()))?
+                .context("error occurred when retrieving 'client_metadata'")?
+                .0.get::<SubjectSyntaxTypesSupported>()
+                .ok_or_else(|| Error::protocol_invalid_req("'subject_syntax_types_supported' is required when response type is 'vp_token id_token'", state.clone()))?
+                .context("error occurred when retrieving 'subject_syntax_types_supported'")?;
 
         let unsupported = subject_syntax_types_supported.0.iter().find(|s| {
             !wallet_metadata
