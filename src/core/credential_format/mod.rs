@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{borrow::Cow, collections::HashMap, str::FromStr};
 
-use crate::utils::contains_all;
+use crate::utils::contains_any;
 use serde::{Deserialize, Serialize};
 
 const FORMAT_JWT: &str = "jwt";
@@ -205,14 +205,14 @@ impl ClaimFormatPayload {
     pub fn contains(&self, other: &ClaimFormatPayload) -> bool {
         match (self, other) {
             (ClaimFormatPayload::Alg(algs), ClaimFormatPayload::Alg(other)) => {
-                contains_all(algs, other)
+                contains_any(algs, other)
             }
             (
                 ClaimFormatPayload::AlgValuesSupported(algs),
                 ClaimFormatPayload::AlgValuesSupported(other),
-            ) => contains_all(algs, other),
+            ) => contains_any(algs, other),
             (ClaimFormatPayload::ProofType(proofs), ClaimFormatPayload::ProofType(other)) => {
-                contains_all(proofs, other)
+                contains_any(proofs, other)
             }
             (
                 ClaimFormatPayload::SdJwtAlgValues {
@@ -224,8 +224,8 @@ impl ClaimFormatPayload {
                     kb_jwt_alg_values: other_kb_jwt_algs,
                 },
             ) => {
-                contains_all(sd_jwt_algs, other_sd_jwt_algs)
-                    && contains_all(kb_jwt_algs, other_kb_jwt_algs)
+                contains_any(sd_jwt_algs, other_sd_jwt_algs)
+                    && contains_any(kb_jwt_algs, other_kb_jwt_algs)
             }
             (ClaimFormatPayload::Json(json), ClaimFormatPayload::Json(other)) => json.eq(other),
             _ => false,
