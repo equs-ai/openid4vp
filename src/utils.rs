@@ -86,8 +86,8 @@ impl<T: Serialize> Serialize for NonEmptyVec<T> {
     }
 }
 
-pub(crate) fn contains_all<T: PartialEq>(large: &[T], small: &[T]) -> bool {
-    small.iter().all(|item| large.contains(item))
+pub(crate) fn contains_any<T: PartialEq>(large: &[T], small: &[T]) -> bool {
+    small.iter().any(|item| large.contains(item))
 }
 
 pub(crate) fn from_string_or_value<T>(value: &serde_json::Value) -> serde_json::Result<T>
