@@ -54,6 +54,7 @@ impl ClientId {
         let id = parts[1].to_string();
         Ok(Self { id, prefix })
     }
+
     pub fn get_prefix(&self) -> &ClientIdPrefix {
         &self.prefix
     }
@@ -64,6 +65,28 @@ impl ClientId {
 
     pub fn get_full_id(&self) -> String {
         format!("{}:{}", self.get_prefix().to_string(), self.get_id())
+    }
+
+    pub fn from_did(did: &str) -> Result<Self, Error> {
+        let did = ssi::dids::DIDBuf::from_string(did.to_string())?;
+
+        Ok(Self {
+            id: did.into_string(),
+            prefix: ClientIdPrefix::DecentralizedIdentifier,
+        })
+    }
+
+    pub fn from_redirect_uri(uri: &Url) -> Result<Self, Error> {
+        Ok(Self {
+            id: uri.to_string(),
+            prefix: ClientIdPrefix::RedirectUri,
+        })
+    }
+}
+
+impl Display for ClientId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.get_full_id())
     }
 }
 
