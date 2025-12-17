@@ -75,6 +75,13 @@ impl ClientId {
             prefix: ClientIdPrefix::DecentralizedIdentifier,
         })
     }
+
+    pub fn from_redirect_uri(uri: &Url) -> Result<Self, Error> {
+        Ok(Self {
+            id: uri.to_string(),
+            prefix: ClientIdPrefix::RedirectUri,
+        })
+    }
 }
 
 impl Display for ClientId {
