@@ -234,6 +234,8 @@ pub struct TransactionDataItem {
     pub type_: String,
     pub credential_ids: Vec<String>,
     pub transaction_data_hashes_alg: Option<Vec<HashAlgorithm>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<TransactionDataItemTypeContent>,
 }
 
 impl TransactionDataItem {
@@ -248,6 +250,29 @@ impl TransactionDataItem {
         let json_string = serde_json::to_string(&self).map_err(|e| Internal(anyhow!(e)))?;
         Ok(BASE64_URL_SAFE_NO_PAD.encode(json_string))
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum TransactionDataItemTypeContent {
+    #[serde(rename = "delegate")]
+    DelegateSdJwt(DelegateSdJwtTransactionData),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DelegateSdJwtTransactionData {
+    pub format: DelegateSdJwtTransactionDataFormat,
+    pub delegate_payload_disclosure: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delegate_disclosures: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum DelegateSdJwtTransactionDataFormat {
+    #[serde(rename = "dSD-JWT")]
+    Open,
+    #[serde(rename = "dSD-JWT+KB")]
+    HolderBinding,
 }
 
 /// `client_metadata` field in the Authorization Request.
@@ -869,7 +894,8 @@ impl TryFrom<Json> for ExpectedOrigins {
 #[cfg(test)]
 mod test {
     use crate::core::authorization_request::parameters::{
-        ClientId, ClientIdPrefix, HashAlgorithm, TransactionDataItem,
+        ClientId, ClientIdPrefix, DelegateSdJwtTransactionData, DelegateSdJwtTransactionDataFormat,
+        HashAlgorithm, TransactionDataItem, TransactionDataItemTypeContent,
     };
     use crate::core::authorization_request::ResolvedPresentationQuery;
     use crate::core::dcql::DcqlCredential;
@@ -998,6 +1024,13 @@ mod test {
             type_: "type".to_string(),
             credential_ids: vec!["1".to_string(), "2".to_string()],
             transaction_data_hashes_alg: Some(vec![HashAlgorithm::Sha256]),
+            content: Some(TransactionDataItemTypeContent::DelegateSdJwt(DelegateSdJwtTransactionData {
+                format: DelegateSdJwtTransactionDataFormat::Open,
+                // ["x_iZ8iTyS0AJKK023bEucw", "address", {"_sd":["23ar6l1qPFyccVzAcKU2H564p3DHp8RqUQKHMqoVP2M"]}]
+                delegate_payload_disclosure: "WyJ4X2laOGlUeVMwQUpLSzAyM2JFdWN3IiwgImFkZHJlc3MiLCB7Il9zZCI6WyIyM2FyNmwxcVBGeWNjVnpBY0tVMkg1NjRwM0RIcDhScVVRS0hNcW9WUDJNIl19XQ".to_string(),
+                // ["_PyoG8T1k2IQu-u7iW72Aw", "country", "DE"]
+                delegate_disclosures: Some(vec!["WyJfUHlvRzhUMWsySVF1LXU3aVc3MkF3IiwgImNvdW50cnkiLCAiREUiXQ".to_string()]),
+            }))
         };
         let original_str = serde_json::to_string(&original_tdi).unwrap();
         let encoded = serde_json::from_str::<TransactionDataItem>(original_str.as_str())
