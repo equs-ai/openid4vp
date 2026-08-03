@@ -230,12 +230,10 @@ impl TypedParameter for TransactionData {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TransactionDataItem {
-    #[serde(rename = "type")]
-    pub type_: String,
     pub credential_ids: Vec<String>,
     pub transaction_data_hashes_alg: Option<Vec<HashAlgorithm>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content: Option<TransactionDataItemTypeContent>,
+    #[serde(flatten)]
+    pub content: TransactionDataItemTypeContent,
 }
 
 impl TransactionDataItem {
@@ -250,6 +248,10 @@ impl TransactionDataItem {
         let json_string = serde_json::to_string(&self).map_err(|e| Internal(anyhow!(e)))?;
         Ok(BASE64_URL_SAFE_NO_PAD.encode(json_string))
     }
+
+    pub fn type_(&self) -> &str {
+        self.content.type_()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -257,6 +259,24 @@ impl TransactionDataItem {
 pub enum TransactionDataItemTypeContent {
     #[serde(rename = "delegate")]
     DelegateSdJwt(DelegateSdJwtTransactionData),
+    #[serde(untagged)]
+    Unknown {
+        #[serde(rename = "type")]
+        type_: String,
+        #[serde(flatten)]
+        data: serde_json::Map<String, Json>,
+    },
+}
+
+impl TransactionDataItemTypeContent {
+    pub const DELEGATE_SD_JWT_TYPE: &'static str = "delegate";
+
+    pub fn type_(&self) -> &str {
+        match self {
+            Self::DelegateSdJwt(_) => Self::DELEGATE_SD_JWT_TYPE,
+            Self::Unknown { type_, .. } => type_,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -893,10 +913,7 @@ impl TryFrom<Json> for ExpectedOrigins {
 
 #[cfg(test)]
 mod test {
-    use crate::core::authorization_request::parameters::{
-        ClientId, ClientIdPrefix, DelegateSdJwtTransactionData, DelegateSdJwtTransactionDataFormat,
-        HashAlgorithm, TransactionDataItem, TransactionDataItemTypeContent,
-    };
+    use crate::core::authorization_request::parameters::{ClientId, ClientIdPrefix, DelegateSdJwtTransactionData, DelegateSdJwtTransactionDataFormat, HashAlgorithm, TransactionDataItem, TransactionDataItemTypeContent};
     use crate::core::authorization_request::ResolvedPresentationQuery;
     use crate::core::dcql::DcqlCredential;
     use rstest::rstest;
@@ -1016,23 +1033,42 @@ mod test {
         let encoded = "ewogICAidHlwZSI6ICJzb21lLXR5cGUiLAogICAiY3JlZGVudGlhbF9pZHMiOiBbImlkMSIsICJpZDIiXSwKICAgInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6IFsic2hhLTI1NiJdCn0";
         let actual = TransactionDataItem::from_base64url_encoded(encoded).unwrap();
         assert_eq!(expected, actual);
+        assert_eq!("some-type", actual.content.type_());
+    }
+
+    #[test]
+    fn unknown_transaction_data_type_round_trips() {
+        let json = r#"{"type":"unknown-type","credential_ids":["id1"],"transaction_data_hashes_alg":null,"whatever":{"a":1}}"#;
+        let item = serde_json::from_str::<TransactionDataItem>(json).unwrap();
+        assert!(matches!(
+            &item.content,
+            TransactionDataItemTypeContent::Unknown { type_, data }
+                if type_ == "unknown-type" && data.contains_key("whatever")
+        ));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+            serde_json::to_value(&item).unwrap()
+        );
     }
 
     #[test]
     fn transaction_data_deserializes_and_serializes_successfully() {
         let original_tdi = TransactionDataItem {
-            type_: "type".to_string(),
             credential_ids: vec!["1".to_string(), "2".to_string()],
             transaction_data_hashes_alg: Some(vec![HashAlgorithm::Sha256]),
-            content: Some(TransactionDataItemTypeContent::DelegateSdJwt(DelegateSdJwtTransactionData {
+            content: TransactionDataItemTypeContent::DelegateSdJwt(DelegateSdJwtTransactionData {
                 format: DelegateSdJwtTransactionDataFormat::Open,
                 // ["x_iZ8iTyS0AJKK023bEucw", "address", {"_sd":["23ar6l1qPFyccVzAcKU2H564p3DHp8RqUQKHMqoVP2M"]}]
                 delegate_payload_disclosure: "WyJ4X2laOGlUeVMwQUpLSzAyM2JFdWN3IiwgImFkZHJlc3MiLCB7Il9zZCI6WyIyM2FyNmwxcVBGeWNjVnpBY0tVMkg1NjRwM0RIcDhScVVRS0hNcW9WUDJNIl19XQ".to_string(),
                 // ["_PyoG8T1k2IQu-u7iW72Aw", "country", "DE"]
                 delegate_disclosures: Some(vec!["WyJfUHlvRzhUMWsySVF1LXU3aVc3MkF3IiwgImNvdW50cnkiLCAiREUiXQ".to_string()]),
-            }))
+            }),
         };
         let original_str = serde_json::to_string(&original_tdi).unwrap();
+        // content fields are flattened onto the item, tagged by the item's `type`
+        assert!(original_str.contains(r#""type":"delegate","#));
+        assert!(original_str.contains(r#""format":"dSD-JWT""#));
+        assert!(!original_str.contains("content"));
         let encoded = serde_json::from_str::<TransactionDataItem>(original_str.as_str())
             .unwrap()
             .into_base64url_encoded()
@@ -1049,7 +1085,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "missing field `type`")]
+    #[should_panic(expected = "data did not match any variant")]
     fn test_transaction_data_deserialize_returns_format_error() {
         let encoded = "ewogICAiY3JlZGVudGlhbF9pZHMiOiBbImlkMSIsICJpZDIiXSwKICAgInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6IFsic2hhLTI1NiJdCn0";
         TransactionDataItem::from_base64url_encoded(encoded).unwrap();
