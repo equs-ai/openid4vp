@@ -313,6 +313,7 @@ fn validate_response_type(
     Ok(())
 }
 
+/// Rejects the request when the Wallet does not support any of the formats the Verifier advertises.
 fn validate_vp_formats_supported(
     metadata: &ClientMetadata,
     wallet_metadata: &WalletMetadata,
@@ -322,22 +323,162 @@ fn validate_vp_formats_supported(
         return Ok(());
     };
 
-    for (format, alg) in vp_formats.0 {
-        let found = wallet_metadata
-            .vp_formats_supported()
-            .contains_claim_format_with_payload(&format, &alg);
+    if vp_formats.0.is_empty() {
+        return Err(Error::protocol_vp_formats_not_supported(
+            "the verifier advertised an empty 'vp_formats_supported' object",
+            state,
+        ));
+    }
 
-        if !found {
-            return Err(Error::protocol_vp_formats_not_supported(
-                &format!(
-                    "unsupported vp format = '{}' with alg values '{}'",
-                    String::from(format.to_owned()),
-                    serde_json::to_string(&alg).unwrap_or_else(|_| "".to_string())
-                ),
-                state,
-            ));
+    let supported = wallet_metadata.vp_formats_supported();
+    let overlaps = vp_formats
+        .0
+        .iter()
+        .any(|(format, alg)| supported.contains_claim_format_with_payload(format, alg));
+
+    if overlaps {
+        return Ok(());
+    }
+
+    let offered = vp_formats
+        .0
+        .iter()
+        .map(|(format, alg)| {
+            format!(
+                "'{}' with alg values '{}'",
+                String::from(format.to_owned()),
+                serde_json::to_string(alg).unwrap_or_default()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    Err(Error::protocol_vp_formats_not_supported(
+        &format!("none of the vp formats offered by the verifier are supported: {offered}"),
+        state,
+    ))
+}
+
+#[cfg(test)]
+mod test {
+    use super::validate_vp_formats_supported;
+    use crate::core::authorization_request::parameters::ClientMetadata;
+    use crate::core::error::{Error, ErrorType};
+    use crate::core::metadata::WalletMetadata;
+    use crate::core::object::UntypedObject;
+    use serde_json::json;
+
+    const SD_JWT_ONLY_WALLET: &str = r#"{
+        "issuer": "https://self-issued.me/v2",
+        "authorization_endpoint": "openid4vp://",
+        "response_types_supported": ["vp_token"],
+        "vp_formats_supported": {
+            "dc+sd-jwt": {
+                "sd-jwt_alg_values": ["EdDSA", "ES256"],
+                "kb-jwt_alg_values": ["EdDSA", "ES256"]
+            }
+        }
+    }"#;
+
+    fn wallet_metadata() -> WalletMetadata {
+        WalletMetadata::try_from(serde_json::from_str::<UntypedObject>(SD_JWT_ONLY_WALLET).unwrap())
+            .unwrap()
+    }
+
+    fn client_metadata(value: serde_json::Value) -> ClientMetadata {
+        ClientMetadata::try_from(value).unwrap()
+    }
+
+    fn sd_jwt() -> serde_json::Value {
+        json!({
+            "sd-jwt_alg_values": ["EdDSA", "ES256"],
+            "kb-jwt_alg_values": ["EdDSA", "ES256"]
+        })
+    }
+
+    fn mso_mdoc() -> serde_json::Value {
+        json!({
+            "issuerauth_alg_values": [-7, -8],
+            "deviceauth_alg_values": [-7, -8]
+        })
+    }
+
+    fn error_type(error: Error) -> ErrorType {
+        match error {
+            Error::Protocol(err) => err.r#type,
+            Error::Internal(err) => panic!("expected a protocol error, got: {err}"),
         }
     }
 
-    Ok(())
+    #[test]
+    fn a_format_the_wallet_lacks_is_accepted_while_another_one_overlaps() {
+        // OpenID4VP 1.0, Section 8.5: the request is refused only when the Wallet supports *none*
+        // of the offered formats. Here the request can still be satisfied over `dc+sd-jwt`.
+        let metadata = client_metadata(json!({
+            "vp_formats_supported": {
+                "dc+sd-jwt": sd_jwt(),
+                "mso_mdoc": mso_mdoc()
+            }
+        }));
+
+        assert!(validate_vp_formats_supported(&metadata, &wallet_metadata(), None).is_ok());
+    }
+
+    #[test]
+    fn a_verifier_the_wallet_shares_no_format_with_is_rejected() {
+        let metadata = client_metadata(json!({
+            "vp_formats_supported": { "mso_mdoc": mso_mdoc() }
+        }));
+
+        let err = validate_vp_formats_supported(&metadata, &wallet_metadata(), None).unwrap_err();
+
+        assert_eq!(error_type(err), ErrorType::VpFormatsNotSupported);
+    }
+
+    #[test]
+    fn an_overlapping_format_carrying_no_common_algorithm_is_rejected() {
+        let metadata = client_metadata(json!({
+            "vp_formats_supported": {
+                "dc+sd-jwt": {
+                    "sd-jwt_alg_values": ["RS256"],
+                    "kb-jwt_alg_values": ["RS256"]
+                }
+            }
+        }));
+
+        let err = validate_vp_formats_supported(&metadata, &wallet_metadata(), None).unwrap_err();
+
+        assert_eq!(error_type(err), ErrorType::VpFormatsNotSupported);
+    }
+
+    #[test]
+    fn the_state_is_carried_into_the_error() {
+        let metadata = client_metadata(json!({
+            "vp_formats_supported": { "mso_mdoc": mso_mdoc() }
+        }));
+        let state = Some("state-1".to_string());
+
+        let err = validate_vp_formats_supported(&metadata, &wallet_metadata(), state.clone())
+            .unwrap_err();
+
+        match err {
+            Error::Protocol(err) => assert_eq!(err.state, state),
+            Error::Internal(err) => panic!("expected a protocol error, got: {err}"),
+        }
+    }
+
+    #[test]
+    fn metadata_without_vp_formats_is_accepted() {
+        let metadata = client_metadata(json!({ "client_name": "Verifier" }));
+
+        assert!(validate_vp_formats_supported(&metadata, &wallet_metadata(), None).is_ok());
+    }
+
+    #[test]
+    fn an_empty_vp_formats_object_is_rejected() {
+        let metadata = client_metadata(json!({ "vp_formats_supported": {} }));
+        let err = validate_vp_formats_supported(&metadata, &wallet_metadata(), None).unwrap_err();
+
+        assert_eq!(error_type(err), ErrorType::VpFormatsNotSupported);
+    }
 }

@@ -14,7 +14,7 @@ use base64::prelude::BASE64_URL_SAFE_NO_PAD;
 use base64::Engine;
 use p256::elliptic_curve::rand_core::RngCore;
 use serde::{Deserialize, Serialize, Serializer};
-use serde_json::{Value as Json, Value};
+use serde_json::{Map as JsonMap, Value as Json, Value};
 use std::fmt::Display;
 use std::{fmt, ops::Deref};
 use url::{Origin, Url};
@@ -911,14 +911,107 @@ impl TryFrom<Json> for ExpectedOrigins {
     }
 }
 
+/// The `data` of a [VerifierInfoEntry].
+///
+/// Per OID4VP, the attestation is either a string (e.g. a JWT) or a JSON object, as
+/// determined by the entry's `format`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum VerifierInfoData {
+    String(String),
+    Object(JsonMap<String, Json>),
+}
+
+impl From<String> for VerifierInfoData {
+    fn from(value: String) -> Self {
+        VerifierInfoData::String(value)
+    }
+}
+
+impl From<JsonMap<String, Json>> for VerifierInfoData {
+    fn from(value: JsonMap<String, Json>) -> Self {
+        VerifierInfoData::Object(value)
+    }
+}
+
+impl TryFrom<Json> for VerifierInfoData {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        match value {
+            Json::String(s) => Ok(VerifierInfoData::String(s)),
+            Json::Object(o) => Ok(VerifierInfoData::Object(o)),
+            _ => Err(anyhow!(
+                "`verifier_info` `data` must be a string or a JSON object"
+            )),
+        }
+    }
+}
+
+impl From<VerifierInfoData> for Json {
+    fn from(value: VerifierInfoData) -> Self {
+        match value {
+            VerifierInfoData::String(s) => Json::String(s),
+            VerifierInfoData::Object(o) => Json::Object(o),
+        }
+    }
+}
+
+/// A single `verifier_info` entry, per OID4VP.
+///
+/// Carries an attestation about the Verifier relevant to the Credential Request.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VerifierInfoEntry {
+    pub format: String,
+    pub data: VerifierInfoData,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_ids: Option<NonEmptyVec<String>>,
+}
+
+/// The `verifier_info` authorization request parameter: a list of [VerifierInfoEntry].
+#[derive(Debug, Clone, PartialEq)]
+pub struct VerifierInfo(pub NonEmptyVec<VerifierInfoEntry>);
+
+impl From<NonEmptyVec<VerifierInfoEntry>> for VerifierInfo {
+    fn from(entries: NonEmptyVec<VerifierInfoEntry>) -> Self {
+        VerifierInfo(entries)
+    }
+}
+
+impl TryFrom<Json> for VerifierInfo {
+    type Error = Error;
+
+    fn try_from(value: Json) -> Result<Self, Self::Error> {
+        Ok(Self(serde_json::from_value(value)?))
+    }
+}
+
+impl TryFrom<VerifierInfo> for Json {
+    type Error = serde_json::Error;
+
+    fn try_from(value: VerifierInfo) -> Result<Self, Self::Error> {
+        serde_json::to_value(value.0)
+    }
+}
+
+impl TypedParameter for VerifierInfo {
+    const KEY: &'static str = "verifier_info";
+}
+
 #[cfg(test)]
 mod test {
-    use crate::core::authorization_request::parameters::{ClientId, ClientIdPrefix, DelegateSdJwtTransactionData, DelegateSdJwtTransactionDataFormat, HashAlgorithm, TransactionDataItem, TransactionDataItemTypeContent};
+    use crate::core::authorization_request::parameters::{
+        ClientId, ClientIdPrefix, DelegateSdJwtTransactionData, DelegateSdJwtTransactionDataFormat,
+        HashAlgorithm, TransactionDataItem, TransactionDataItemTypeContent, VerifierInfo,
+        VerifierInfoData, VerifierInfoEntry,
+    };
     use crate::core::authorization_request::ResolvedPresentationQuery;
     use crate::core::dcql::DcqlCredential;
+    use crate::core::object::UntypedObject;
     use rstest::rstest;
-    use serde_json::json;
+    use serde_json::{json, Value as Json};
     use std::vec;
+
     #[rstest]
     #[case(
         "redirect_uri:https://client.example.org/cb",
@@ -1089,6 +1182,114 @@ mod test {
     fn test_transaction_data_deserialize_returns_format_error() {
         let encoded = "ewogICAiY3JlZGVudGlhbF9pZHMiOiBbImlkMSIsICJpZDIiXSwKICAgInRyYW5zYWN0aW9uX2RhdGFfaGFzaGVzX2FsZyI6IFsic2hhLTI1NiJdCn0";
         TransactionDataItem::from_base64url_encoded(encoded).unwrap();
+    }
+
+    #[test]
+    fn verifier_info_deserializes_successfully() {
+        let verifier_info = VerifierInfo::try_from(json!([
+            {
+                "format": "jwt",
+                "data": "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3ZlcmlmaWVyLmV4YW1wbGUifQ.sig",
+                "credential_ids": ["pid", "mdl"]
+            },
+            {
+                "format": "ac_vp",
+                "data": {
+                    "some": "attestation"
+                }
+            }
+        ]))
+        .unwrap();
+
+        assert_eq!(2, verifier_info.0.len());
+
+        let first = &verifier_info.0[0];
+        assert_eq!("jwt", first.format);
+        assert_eq!(
+            Some(vec!["pid".to_string(), "mdl".to_string()]),
+            first.credential_ids.as_ref().map(|ids| ids.to_vec())
+        );
+        // `data` is a string when the `format` defines a string-encoded attestation.
+        assert_eq!(
+            VerifierInfoData::String(
+                "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJodHRwczovL3ZlcmlmaWVyLmV4YW1wbGUifQ.sig"
+                    .to_string()
+            ),
+            first.data
+        );
+
+        let second = &verifier_info.0[1];
+        assert_eq!("ac_vp", second.format);
+        // `data` is a JSON object when the `format` defines an object-encoded attestation.
+        assert_eq!(
+            VerifierInfoData::try_from(json!({ "some": "attestation" })).unwrap(),
+            second.data
+        );
+        // `credential_ids` is optional: absent means the attestation applies to all credentials.
+        assert_eq!(None, second.credential_ids);
+    }
+
+    #[test]
+    fn verifier_info_round_trips_through_untyped_object() {
+        let expected = VerifierInfo(
+            vec![
+                VerifierInfoEntry {
+                    format: "jwt".to_string(),
+                    data: "header.payload.signature".to_string().into(),
+                    credential_ids: Some(vec!["pid".to_string()].try_into().unwrap()),
+                },
+                VerifierInfoEntry {
+                    format: "ac_vp".to_string(),
+                    data: VerifierInfoData::try_from(json!({ "presentation": "..." })).unwrap(),
+                    credential_ids: None,
+                },
+            ]
+            .try_into()
+            .unwrap(),
+        );
+
+        let mut object = UntypedObject::default();
+        assert!(object.insert(expected.clone()).is_none());
+
+        let json = Json::from(object.clone());
+        // `credential_ids` is skipped when absent rather than serialized as null.
+        assert_eq!(
+            json!({
+                "verifier_info": [
+                    {
+                        "format": "jwt",
+                        "data": "header.payload.signature",
+                        "credential_ids": ["pid"]
+                    },
+                    {
+                        "format": "ac_vp",
+                        "data": { "presentation": "..." }
+                    }
+                ]
+            }),
+            json
+        );
+
+        let actual = object.get::<VerifierInfo>().unwrap().unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[rstest]
+    // `verifier_info` must be an array, not a single entry.
+    #[case(json!({ "format": "jwt", "data": {} }))]
+    // `format` is required.
+    #[case(json!([{ "data": {} }]))]
+    // `data` is required.
+    #[case(json!([{ "format": "jwt" }]))]
+    // `credential_ids` must be an array of strings.
+    #[case(json!([{ "format": "jwt", "data": {}, "credential_ids": "pid" }]))]
+    // `credential_ids`, when present, must be non-empty.
+    #[case(json!([{ "format": "jwt", "data": {}, "credential_ids": [] }]))]
+    // `data` must be a string or an object.
+    #[case(json!([{ "format": "jwt", "data": 1 }]))]
+    #[case(json!([{ "format": "jwt", "data": ["header.payload.signature"] }]))]
+    fn verifier_info_deserializes_unsuccessfully(#[case] json: Json) {
+        assert!(VerifierInfo::try_from(json).is_err());
     }
 
     fn get_json() -> ResolvedPresentationQuery {
