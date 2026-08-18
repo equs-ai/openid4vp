@@ -85,12 +85,41 @@ impl X509Client {
         signer: Arc<dyn Signer<Error = anyhow::Error> + Send + Sync>,
         variant: X509Variant,
     ) -> Result<Self> {
-        let leaf = &x5c[0];
-        let id = if variant == X509Variant::Hash {
-            let hash = sha2::Sha256::digest(&leaf.tbs_certificate.to_der()?);
-            BASE64_STANDARD_NO_PAD.encode(hash)
-        } else {
-            let id = if let Some(san) = leaf
+        let id = Self::client_id(&x5c, variant)?;
+
+        Ok(X509Client {
+            id,
+            x5c,
+            signer,
+            variant,
+        })
+    }
+
+    /// Derives the [ClientId] the leaf of `x5c` implies — the leaf's hash for
+    /// [X509Variant::Hash], its Subject Alternative Name for
+    /// [X509Variant::SanDns].
+    ///
+    /// Takes no [Signer]: deriving an identifier never signs anything. Callers
+    /// that only need to know which `client_id` a chain yields — an `x509_hash`
+    /// one cannot be written by hand, so this is the only way to learn it —
+    /// should use this rather than building a whole [X509Client] around a
+    /// placeholder signer. [X509Client::new] calls it, so the two cannot drift.
+    ///
+    /// # Errors
+    ///
+    /// If `x5c` is empty, the leaf cannot be DER-encoded, or (for
+    /// [X509Variant::SanDns]) the leaf carries no DNS Subject Alternative Name.
+    pub fn client_id(x5c: &[Certificate], variant: X509Variant) -> Result<ClientId> {
+        let leaf = x5c
+            .first()
+            .ok_or_else(|| anyhow!("x509 certificate chain is empty"))?;
+
+        let id = match variant {
+            X509Variant::Hash => {
+                let hash = sha2::Sha256::digest(&leaf.to_der()?);
+                BASE64_URL_SAFE_NO_PAD.encode(hash)
+            }
+            X509Variant::SanDns => leaf
                 .tbs_certificate
                 .filter::<SubjectAltName>()
                 .filter_map(|r| match r {
@@ -109,26 +138,14 @@ impl X509Client {
                     }
                 })
                 .next()
-            {
-                san
-            } else {
-                bail!("x509 certificate does not contain Subject Alternative Name");
-            };
-            id
+                .ok_or_else(|| {
+                    anyhow!("x509 certificate does not contain Subject Alternative Name")
+                })?,
         };
 
-        let client_id = if variant == X509Variant::Hash {
-            format!("x509_hash:{}", id)
-        } else {
-            format!("x509_san_dns:{}", id)
-        };
-        Ok(X509Client {
-            id: ClientId::new(client_id)?,
-            x5c,
-            signer,
-            variant,
-        })
+        ClientId::new(format!("{}:{}", variant.to_prefix(), id))
     }
+
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -240,5 +257,95 @@ impl Client for RedirectUriClient {
         Err(anyhow!(
             "generation of signed jwt is not supported in 'redirect_uri' client identifier"
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use x509_cert::der::DecodePem;
+
+    /// P-256 leaf with `subjectAltName = DNS:verifier.example`.
+    const LEAF_PEM: &str = "-----BEGIN CERTIFICATE-----
+MIIBpTCCAUugAwIBAgIUZ0sUbVcHoWEWaz9DcIw3HNDv4mwwCgYIKoZIzj0EAwIw
+GzEZMBcGA1UEAwwQdmVyaWZpZXIuZXhhbXBsZTAeFw0yNjA3MjUxMzE3NTJaFw0z
+NjA3MjIxMzE3NTJaMBsxGTAXBgNVBAMMEHZlcmlmaWVyLmV4YW1wbGUwWTATBgcq
+hkjOPQIBBggqhkjOPQMBBwNCAAQfGeYeCA4RI9xmfml8yuB289vgYdplBUPDtlkR
+VX5n8ec6c150wgvBJD5etexGbiSrJtlZ5VKI2IuCo3eMlCgpo20wazAdBgNVHQ4E
+FgQU9uFMq/NqtsYpwU5bdoAAMmCgYGQwHwYDVR0jBBgwFoAU9uFMq/NqtsYpwU5b
+doAAMmCgYGQwGwYDVR0RBBQwEoIQdmVyaWZpZXIuZXhhbXBsZTAMBgNVHRMBAf8E
+AjAAMAoGCCqGSM49BAMCA0gAMEUCIQDm4xtRVAZeLVpXtBF+JmZA6G1EgT3hJoLM
+olfQxZzr/AIgN0aICEuoH4qkiU5n6zsYrRUGSjxg74hGubPQcUI901Y=
+-----END CERTIFICATE-----";
+
+    #[derive(Debug)]
+    struct NoSigner;
+
+    #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+    impl Signer for NoSigner {
+        type Error = anyhow::Error;
+
+        fn alg(&self) -> Result<String> {
+            unimplemented!("'alg' is not implemented for NoSigner")
+        }
+
+        fn jwk(&self) -> Result<ssi::jwk::JWK> {
+            unimplemented!("'jwk' is not implemented for NoSigner")
+        }
+
+        async fn sign(&self, _payload: &[u8]) -> Result<Vec<u8>> {
+            unimplemented!("'sign' is not implemented for NoSigner")
+        }
+    }
+
+    fn client(variant: X509Variant) -> X509Client {
+        let leaf = Certificate::from_pem(LEAF_PEM).expect("leaf certificate parses");
+        X509Client::new(vec![leaf], Arc::new(NoSigner), variant).expect("client is constructed")
+    }
+
+    #[test]
+    fn x509_hash_client_id_is_base64url_sha256_of_the_whole_der_certificate() {
+        assert_eq!(
+            client(X509Variant::Hash).id().to_string(),
+            "x509_hash:IKC0DWzNRPtrEnSH-5lUfjr2qo2Jicub4x9z32rk_9Y"
+        );
+    }
+
+    #[test]
+    fn x509_san_dns_client_id_is_the_leaf_dns_san() {
+        assert_eq!(
+            client(X509Variant::SanDns).id().to_string(),
+            "x509_san_dns:verifier.example"
+        );
+    }
+
+    #[rstest::rstest]
+    #[case(X509Variant::Hash)]
+    #[case(X509Variant::SanDns)]
+    fn client_id_needs_no_signer_and_agrees_with_the_built_client(#[case] variant: X509Variant) {
+        let leaf = Certificate::from_pem(LEAF_PEM).expect("leaf certificate parses");
+
+        let derived = X509Client::client_id(&[leaf], variant).expect("client_id is derived");
+
+        assert_eq!(&derived, client(variant).id());
+    }
+
+    /// Used to index `x5c[0]` unconditionally and panic.
+    #[rstest::rstest]
+    #[case(X509Variant::Hash)]
+    #[case(X509Variant::SanDns)]
+    fn client_id_on_an_empty_chain_errors(#[case] variant: X509Variant) {
+        let err = X509Client::client_id(&[], variant).expect_err("an empty chain has no leaf");
+
+        assert!(err.to_string().contains("empty"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn new_on_an_empty_chain_errors() {
+        let err = X509Client::new(vec![], Arc::new(NoSigner), X509Variant::SanDns)
+            .expect_err("an empty chain has no leaf");
+
+        assert!(err.to_string().contains("empty"), "unexpected error: {err}");
     }
 }
