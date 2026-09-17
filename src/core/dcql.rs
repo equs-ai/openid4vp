@@ -260,7 +260,7 @@ impl DcqlCredentialSet {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct DcqlMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     vct_values: Option<NonEmptyVec<String>>,
@@ -268,12 +268,6 @@ pub struct DcqlMeta {
     type_values: Option<NonEmptyVec<NonEmptyVec<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     doctype_value: Option<String>,
-}
-
-impl Default for DcqlMeta {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl DcqlMeta {
