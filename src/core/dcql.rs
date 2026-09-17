@@ -30,7 +30,7 @@ impl TryFrom<Json> for ID {
     type Error = Error;
     fn try_from(value: Json) -> Result<Self, Self::Error> {
         let parsed = from_string_or_value(&value)?;
-        Ok(ID::new(parsed)?)
+        ID::new(parsed)
     }
 }
 
@@ -268,6 +268,12 @@ pub struct DcqlMeta {
     type_values: Option<NonEmptyVec<NonEmptyVec<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     doctype_value: Option<String>,
+}
+
+impl Default for DcqlMeta {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DcqlMeta {
