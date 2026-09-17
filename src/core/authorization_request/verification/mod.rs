@@ -172,7 +172,7 @@ where
     let request = match fetched_request {
         FetchedAuthorizationRequest::Plain(request) => {
             if let Some(uri) = request.return_uri() {
-                wallet.redirect_uri(&request, &uri).await?;
+                wallet.redirect_uri(&request, uri).await?;
             } else if request.response_mode != ResponseMode::DcApi
                 && request.response_mode != ResponseMode::DcApiJwt
             {
@@ -227,7 +227,7 @@ where
 fn is_signed_jwt(jwt: &str) -> Result<bool, ssi::claims::jws::Error> {
     let (_, _, signature) = split_jws(jwt)?;
 
-    Ok(signature.len() > 0)
+    Ok(!signature.is_empty())
 }
 
 pub(crate) async fn validate_request_against_metadata<W>(
@@ -244,12 +244,12 @@ where
     if !wallet_metadata
         .get_or_default::<ClientIdPrefixesSupported>()?
         .0
-        .contains(&client_id_prefix)
+        .contains(client_id_prefix)
     {
         return Err(Error::protocol_invalid_req(
             &format!(
                 "wallet does not support client_id_prefix '{}'",
-                client_id_prefix.to_string()
+                client_id_prefix
             ),
             state.clone(),
         ));
@@ -296,11 +296,10 @@ fn validate_response_type(
                 .ok_or_else(|| Error::protocol_invalid_req("'subject_syntax_types_supported' is required when response type is 'vp_token id_token'", state.clone()))?
                 .context("error occurred when retrieving 'subject_syntax_types_supported'")?;
 
-        let unsupported = subject_syntax_types_supported.0.iter().find(|s| {
-            !wallet_metadata
-                .subject_syntax_types_supported()
-                .contains(&s)
-        });
+        let unsupported = subject_syntax_types_supported
+            .0
+            .iter()
+            .find(|s| !wallet_metadata.subject_syntax_types_supported().contains(s));
 
         if let Some(unsupported) = unsupported {
             return Err(Error::protocol_invalid_req(

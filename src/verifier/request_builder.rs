@@ -101,7 +101,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
                 self.request_parameters.insert(presentation_definition);
             }
         }
-        self.validate_response_type(&wallet_metadata)?;
+        self.validate_response_type(wallet_metadata)?;
 
         if !wallet_metadata.is_client_id_prefix_supported(&client_id_prefix) {
             let prefix = String::from(client_id_prefix);
@@ -124,7 +124,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
         match request_type {
             RequestType::Plain => {
                 let authorization_request_url = authorization_request_object
-                    .to_url(authorization_endpoint)
+                    .into_url(authorization_endpoint)
                     .context("unable to generate authorization request URL")?;
 
                 Ok((authorization_request_url, None))
@@ -146,7 +146,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
                 };
 
                 let authorization_request_url = signed_auth_req
-                    .to_url(authorization_endpoint)
+                    .into_url(authorization_endpoint)
                     .context("unable to generate authorization request URL")?;
 
                 Ok((authorization_request_url, Some(auth_req_jwt)))
@@ -301,7 +301,7 @@ impl<'a, C: Client + WasmNotSend + WasmNotSync> RequestBuilder<'a, C> {
                 !wallet_metadata
                     .subject_syntax_types_supported()
                     .0
-                    .contains(&s)
+                    .contains(s)
             });
 
             if let Some(unsupported) = unsupported {

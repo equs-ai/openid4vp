@@ -30,7 +30,7 @@ impl TryFrom<Json> for ID {
     type Error = Error;
     fn try_from(value: Json) -> Result<Self, Self::Error> {
         let parsed = from_string_or_value(&value)?;
-        Ok(ID::new(parsed)?)
+        ID::new(parsed)
     }
 }
 
@@ -260,7 +260,7 @@ impl DcqlCredentialSet {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct DcqlMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     vct_values: Option<NonEmptyVec<String>>,
@@ -446,7 +446,10 @@ mod test {
         let meta = DcqlMeta::new();
         assert_eq!(meta.doctype_value(), None);
         let meta = meta.set_doctype_value("org.iso.18013.5.1.mDL".to_string());
-        assert_eq!(meta.doctype_value().unwrap(), &"org.iso.18013.5.1.mDL".to_string());
+        assert_eq!(
+            meta.doctype_value().unwrap(),
+            &"org.iso.18013.5.1.mDL".to_string()
+        );
     }
 
     #[test]
@@ -454,15 +457,28 @@ mod test {
         let meta = DcqlMeta::new();
         assert_eq!(meta.vct_values(), None);
         let meta = meta.set_vct_values(NonEmptyVec::new("credential_type".to_string()));
-        assert_eq!(meta.vct_values().unwrap().first().unwrap(), &"credential_type".to_string());
+        assert_eq!(
+            meta.vct_values().unwrap().first().unwrap(),
+            &"credential_type".to_string()
+        );
     }
 
     #[test]
     fn test_meta_for_type_values() {
         let meta = DcqlMeta::new();
         assert_eq!(meta.type_values(), None);
-        let meta = meta.set_type_values(NonEmptyVec::new(NonEmptyVec::new("credential_types".to_string())));
-        assert_eq!(meta.type_values().unwrap().first().unwrap().first().unwrap(), &"credential_types".to_string());
+        let meta = meta.set_type_values(NonEmptyVec::new(NonEmptyVec::new(
+            "credential_types".to_string(),
+        )));
+        assert_eq!(
+            meta.type_values()
+                .unwrap()
+                .first()
+                .unwrap()
+                .first()
+                .unwrap(),
+            &"credential_types".to_string()
+        );
     }
 
     fn get_base_dcql() -> DCQL {
