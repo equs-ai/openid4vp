@@ -10,6 +10,7 @@ use url::Url;
 
 pub mod parameters;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum AuthorizationResponse {
     Unencoded(UnencodedAuthorizationResponse),

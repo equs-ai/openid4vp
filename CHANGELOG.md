@@ -16,6 +16,7 @@ diverged at `347814f`.
 - Authorization request and response types reworked for the fetch-then-verify flow.
 - `Verifier` is generic over its client; the request signer moved to a
   crate-level `Signer`.
+- Published as `equs-openid4vp`; the library target stays `openid4vp`, so `use openid4vp::…` is unchanged.
 
 ### Fixed
 

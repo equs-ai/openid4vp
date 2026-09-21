@@ -64,7 +64,7 @@ impl ClientId {
     }
 
     pub fn get_full_id(&self) -> String {
-        format!("{}:{}", self.get_prefix().to_string(), self.get_id())
+        format!("{}:{}", self.get_prefix(), self.get_id())
     }
 
     pub fn from_did(did: &str) -> Result<Self, Error> {
@@ -129,7 +129,7 @@ impl<'de> Deserialize<'de> for ClientId {
             .ok_or_else(|| serde::de::Error::custom("missing id from the client_id"))?
             .to_string();
 
-        Ok(Self::new(format!("{}:{}", prefix, id)).map_err(serde::de::Error::custom)?)
+        Self::new(format!("{}:{}", prefix, id)).map_err(serde::de::Error::custom)
     }
 }
 
@@ -198,9 +198,7 @@ impl TryFrom<Json> for ClientIdPrefix {
     type Error = Error;
 
     fn try_from(value: Json) -> Result<Self, Self::Error> {
-        serde_json::from_value(value)
-            .map(String::try_into)?
-            .map_err(Error::from)
+        serde_json::from_value(value).map(String::try_into)?
     }
 }
 
@@ -454,7 +452,6 @@ impl From<Nonce> for Json {
 pub struct WalletNonce(pub String);
 impl WalletNonce {
     /// Crate a new `WalletNonce` with a random value. base-64 encoded.
-
     pub fn random() -> Self {
         let mut nonce_bytes = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut nonce_bytes);

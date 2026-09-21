@@ -1,12 +1,13 @@
 [package]
-name = "openid4vp"
+name = "equs-openid4vp"
 version = "0.1.0"
 edition = "2021"
-authors = ["Spruce Systems, Inc."]
 license = "MIT OR Apache-2.0"
 description = "OpenID Connect for Verifiable Presentations"
-repository = "https://github.com/spruceid/openid4vp/"
-documentation = "https://docs.rs/openid4vp/"
+repository = "https://github.com/equs-ai/openid4vp"
+
+[lib]
+name = "openid4vp"
 
 [features]
 default = []

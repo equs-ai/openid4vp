@@ -145,7 +145,6 @@ impl X509Client {
 
         ClientId::new(format!("{}:{}", variant.to_prefix(), id))
     }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
