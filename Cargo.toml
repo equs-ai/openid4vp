@@ -5,6 +5,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "OpenID Connect for Verifiable Presentations"
 repository = "https://github.com/equs-ai/openid4vp"
+exclude = [".cargo/", ".github/", ".gitignore", ".gitmodules", "tests/", "**/.DS_Store"]
 
 [lib]
 name = "openid4vp"
