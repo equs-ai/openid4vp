@@ -319,7 +319,7 @@ impl From<TrustedAuthority> for RawTrustedAuthority {
     }
 }
 
-/// An X.509 Key Identifier, kept as the base64url text it was given (no padding) and as its bytes.
+/// An X.509 Key Identifier, kept as the base64url text it was given and as its bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyIdentifier {
     encoded: String,
@@ -327,10 +327,11 @@ pub struct KeyIdentifier {
 }
 
 impl KeyIdentifier {
-    /// A Key Identifier from its base64url encoding without padding; refused when empty or not
-    /// base64url.
+    /// A Key Identifier from its base64url encoding, which is kept as given. Padding is tolerated,
+    /// so a query from a Verifier that pads still parses; [Self::from_bytes] never pads. Refused
+    /// when empty or not base64url.
     pub fn from_base64url(encoded: String) -> Result<Self, Error> {
-        let bytes = BASE64_URL_SAFE_NO_PAD.decode(&encoded)?;
+        let bytes = BASE64_URL_SAFE_NO_PAD.decode(encoded.trim_end_matches('='))?;
         ensure!(!bytes.is_empty(), "a Key Identifier cannot be empty");
         Ok(Self { encoded, bytes })
     }
@@ -668,11 +669,26 @@ mod test {
         #[case::empty_list(json!([]))]
         #[case::empty_values(json!([{ "type": "aki", "values": [] }]))]
         #[case::not_base64url(json!([{ "type": "aki", "values": ["not base64!"] }]))]
-        #[case::padded(json!([{ "type": "aki", "values": ["AQI="] }]))]
         #[case::empty_key_identifier(json!([{ "type": "aki", "values": [""] }]))]
         #[case::missing_type(json!([{ "values": ["AQID"] }]))]
         fn malformed_trusted_authorities_are_refused(#[case] authorities: Json) {
             assert!(credential_with(authorities).is_err());
+        }
+
+        #[test]
+        fn a_padded_key_identifier_is_accepted_and_kept_as_given() {
+            let credential =
+                credential_with(json!([{ "type": "aki", "values": ["AQI="] }])).unwrap();
+
+            let serialized = serde_json::to_value(&credential).unwrap();
+            assert_eq!(
+                serialized["trusted_authorities"],
+                json!([{ "type": "aki", "values": ["AQI="] }])
+            );
+            let TrustedAuthority::Aki(akis) = &credential.trusted_authorities().unwrap()[0] else {
+                panic!("expected aki");
+            };
+            assert_eq!(akis[0].as_bytes(), [1, 2]);
         }
 
         #[test]
