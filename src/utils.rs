@@ -26,6 +26,10 @@ impl<T> NonEmptyVec<T> {
     pub fn into_inner(self) -> Vec<T> {
         self.0
     }
+
+    pub fn map<U>(self, f: impl FnMut(T) -> U) -> NonEmptyVec<U> {
+        NonEmptyVec(self.0.into_iter().map(f).collect())
+    }
 }
 
 impl<T> TryFrom<Vec<T>> for NonEmptyVec<T> {
