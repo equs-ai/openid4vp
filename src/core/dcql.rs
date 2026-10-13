@@ -32,7 +32,7 @@ impl TryFrom<Json> for ID {
     type Error = Error;
     fn try_from(value: Json) -> Result<Self, Self::Error> {
         let parsed = from_string_or_value(&value)?;
-        Ok(ID::new(parsed)?)
+        ID::new(parsed)
     }
 }
 
@@ -248,8 +248,7 @@ impl DcqlCredential {
 }
 
 /// An entry of a Trusted Authorities Query (OpenID4VP 1.0 §6.1.1): a trust framework `type` and the
-/// values it is matched against. Types other than the three the specification defines are kept as
-/// [TrustedAuthority::Other], so a query round-trips unchanged.
+/// values it is matched against.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "RawTrustedAuthority", into = "RawTrustedAuthority")]
 pub enum TrustedAuthority {
@@ -327,9 +326,7 @@ pub struct KeyIdentifier {
 }
 
 impl KeyIdentifier {
-    /// A Key Identifier from its base64url encoding, which is kept as given. Padding is tolerated,
-    /// so a query from a Verifier that pads still parses; [Self::from_bytes] never pads. Refused
-    /// when empty or not base64url.
+    /// A Key Identifier from its base64url encoding, which is kept as given.
     pub fn from_base64url(encoded: String) -> Result<Self, Error> {
         let bytes = BASE64_URL_SAFE_NO_PAD.decode(encoded.trim_end_matches('='))?;
         ensure!(!bytes.is_empty(), "a Key Identifier cannot be empty");
@@ -379,7 +376,7 @@ impl DcqlCredentialSet {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct DcqlMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     vct_values: Option<NonEmptyVec<String>>,

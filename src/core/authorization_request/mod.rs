@@ -51,6 +51,7 @@ pub struct AuthorizationRequestObject {
 }
 
 /// An Authorization Request.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AuthorizationRequest {
     #[serde(untagged)]
@@ -68,6 +69,7 @@ pub struct SignedAuthorizationRequest {
 }
 
 /// Fetched Authorization Request.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FetchedAuthorizationRequest {
     UnverifiedJwt(String),
@@ -307,7 +309,7 @@ impl AuthorizationRequestObject {
                 ),
                 PresentationDefinitionIndirection::ByReference(url) => {
                     let resp = http_client
-                        .execute(create_get_request(&url, MIME_TYPE_JSON)?)
+                        .execute(create_get_request(url, MIME_TYPE_JSON)?)
                         .await
                         .map_err(|e| Error::Internal(anyhow!(e)))?;
 
@@ -331,7 +333,7 @@ impl AuthorizationRequestObject {
                                 "failed to get parse Presentation Definition: {e}",
                                 self.state(),
                             )
-                            .add_source(e.into())
+                            .add_source(e)
                         })?;
                     Ok(ResolvedPresentationQuery::PresentationDefinition(
                         presentation_def,
@@ -341,7 +343,7 @@ impl AuthorizationRequestObject {
         }
     }
 
-    pub(crate) fn to_url(self, mut authorization_endpoint: Url) -> Result<Url, Error> {
+    pub(crate) fn into_url(self, mut authorization_endpoint: Url) -> Result<Url, Error> {
         let query = serde_urlencoded::to_string(self.inner.flatten_for_form()?)
             .map_err(|e| Error::Internal(e.into()))?;
 
@@ -417,7 +419,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
                             "could not parse a 'redirect_uri'",
                             state.clone(),
                         )
-                            .add_source(e.into())
+                            .add_source(e)
                     })?
                     .0;
                 (Some(url), mode)
@@ -433,7 +435,7 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
                             "could not parse a 'redirect_uri'",
                             state.clone(),
                         )
-                            .add_source(e.into())
+                            .add_source(e)
                     })?
                     .0;
                 (Some(url), mode)
@@ -494,21 +496,21 @@ impl TryFrom<UntypedObject> for AuthorizationRequestObject {
                 let dcql_val = dcql.parsing_error().map_err(|e| Error::protocol(
                     InvalidDCQLFormat,
                     "an error occurred in parsing dcql_query", state.clone()
-                ).add_source(e.into()))?;
+                ).add_source(e))?;
                 PresentationQuery::DCQL(dcql_val)
             }
             (Some(pd), None, None) => {
                 let pd_val = pd.parsing_error().map_err(|e| Error::protocol(
                     InvalidPresentationDefinitionFormat,
                     "an error occurred in parsing presentation_definition", state.clone()
-                ).add_source(e.into()))?;
+                ).add_source(e))?;
                 PresentationQuery::PresentationDefinition(PresentationDefinitionIndirection::ByValue(pd_val))
             }
             (None, Some(by_reference), None) => {
                 let url = by_reference.parsing_error().map_err(|e| Error::protocol(
                     InvalidPresentationDefinitionUri,
                     "could parse a 'presentation_definition_uri'", state.clone()
-                ).add_source(e.into()))?.0;
+                ).add_source(e))?.0;
                 PresentationQuery::PresentationDefinition(PresentationDefinitionIndirection::ByReference(url))
             }
             _ => return Err(Error::protocol_invalid_req(
@@ -571,7 +573,7 @@ impl SignedAuthorizationRequest {
         Ok((aro.return_uri().cloned(), aro.response_mode().to_owned()))
     }
 
-    pub(crate) fn to_url(self, mut authorization_endpoint: Url) -> Result<Url, Error> {
+    pub(crate) fn into_url(self, mut authorization_endpoint: Url) -> Result<Url, Error> {
         let query = serde_urlencoded::to_string(self).map_err(|e| Error::Internal(e.into()))?;
 
         authorization_endpoint.set_query(Some(&query));
