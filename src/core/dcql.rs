@@ -334,7 +334,11 @@ impl KeyIdentifier {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-        Self::from_base64url(BASE64_URL_SAFE_NO_PAD.encode(bytes))
+        ensure!(!bytes.is_empty(), "a Key Identifier cannot be empty");
+        Ok(Self {
+            encoded: BASE64_URL_SAFE_NO_PAD.encode(bytes),
+            bytes: bytes.to_vec(),
+        })
     }
 
     pub fn as_base64url(&self) -> &str {
