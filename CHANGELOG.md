@@ -5,6 +5,16 @@ All notable changes to this fork are documented here.
 This is a fork of [spruceid/openid4vp](https://github.com/spruceid/openid4vp),
 diverged at `347814f`.
 
+## 0.1.1
+
+### Added
+
+- DCQL `trusted_authorities` on credential queries (OpenID4VP 1.0 §6.1): `aki`, `etsi_tl` and
+  `openid_federation` types, with `KeyIdentifier` for `aki` values.
+- `aki` key identifiers with base64 padding are accepted when parsing.
+
+## 0.1.0
+
 ### Added
 
 - A delegate SD-JWT transaction-data type.
